@@ -111,6 +111,28 @@ void Switch_UpdateEvents()
                 stickNavKey = sc_None;
             }
         }
+        // A / ZR = Enter / Confirm
+        if (kDown & (HidNpadButton_A | HidNpadButton_ZR))
+            sendKeyDown(sc_Return, 13);
+        else if (kUp & (HidNpadButton_A | HidNpadButton_ZR))
+            sendKeyUp(sc_Return);
+
+        // B / Minus / Plus = Escape / Back
+        if (kDown & (HidNpadButton_B | HidNpadButton_Minus | HidNpadButton_Plus))
+            sendKeyDown(sc_Escape, 27);
+        else if (kUp & (HidNpadButton_B | HidNpadButton_Minus | HidNpadButton_Plus))
+            sendKeyUp(sc_Escape);
+
+        // Y = Yes, X = No (for prompts like "Are you sure? (Y/N)")
+        if (kDown & HidNpadButton_Y)
+            sendKeyDown(sc_Y, 'Y');
+        else if (kUp & HidNpadButton_Y)
+            sendKeyUp(sc_Y);
+
+        if (kDown & HidNpadButton_X)
+            sendKeyDown(sc_N, 'N');
+        else if (kUp & HidNpadButton_X)
+            sendKeyUp(sc_N);
     }
     else
     {
@@ -124,30 +146,9 @@ void Switch_UpdateEvents()
         Keyboard[sc_DownArrow] = 0;
         Keyboard[sc_LeftArrow] = 0;
         Keyboard[sc_RightArrow] = 0;
+        Keyboard[sc_Return] = 0;
+        Keyboard[sc_Escape] = 0;
     }
-
-    // A / ZR = Enter / Confirm
-    if (kDown & (HidNpadButton_A | HidNpadButton_ZR))
-        sendKeyDown(sc_Return, 13);
-    else if (kUp & (HidNpadButton_A | HidNpadButton_ZR))
-        sendKeyUp(sc_Return);
-
-    // B / Minus / Plus = Escape / Back
-    if (kDown & (HidNpadButton_B | HidNpadButton_Minus | HidNpadButton_Plus))
-        sendKeyDown(sc_Escape, 27);
-    else if (kUp & (HidNpadButton_B | HidNpadButton_Minus | HidNpadButton_Plus))
-        sendKeyUp(sc_Escape);
-
-    // Y = Yes, X = No (for prompts like "Are you sure? (Y/N)")
-    if (kDown & HidNpadButton_Y)
-        sendKeyDown(sc_Y, 'Y');
-    else if (kUp & HidNpadButton_Y)
-        sendKeyUp(sc_Y);
-
-    if (kDown & HidNpadButton_X)
-        sendKeyDown(sc_N, 'N');
-    else if (kUp & HidNpadButton_X)
-        sendKeyUp(sc_N);
 }
 
 void Switch_PollGameControls()

@@ -204,6 +204,9 @@ void ReadConfig(void)
             mouseenabled = false;
         if (!IN_JoyPresent())
             joystickenabled = false;
+#ifdef __SWITCH__
+        joystickenabled = false;
+#endif
 
         if(mouseadjustment<0) mouseadjustment=0;
         else if(mouseadjustment>9) mouseadjustment=9;
@@ -244,8 +247,12 @@ noconfig:
         if (MousePresent)
             mouseenabled = true;
 
+#ifndef __SWITCH__
         if (IN_JoyPresent())
             joystickenabled = true;
+#else
+        joystickenabled = false;
+#endif
 
         viewsize = 19;                          // start with a good size
         mouseadjustment_v=mouseadjustment=5;

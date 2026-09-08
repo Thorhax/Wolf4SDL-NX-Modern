@@ -454,8 +454,10 @@ void PollControls (void)
     if (mouseenabled)
         PollMouseButtons ();
 
+#ifndef __SWITCH__
     if (joystickenabled)
         PollJoystickButtons ();
+#endif
 
 //
 // get movements
@@ -465,8 +467,10 @@ void PollControls (void)
     if (mouseenabled)
         PollMouseMove ();
 
+#ifndef __SWITCH__
     if (joystickenabled)
         PollJoystickMove ();
+#endif
 
 #ifdef __SWITCH__
     Switch_PollGameControls();
