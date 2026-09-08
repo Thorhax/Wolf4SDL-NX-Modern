@@ -36,48 +36,94 @@ void Switch_UpdateEvents()
     };
 
     static uint32_t lastStickTic = 0;
+    static uint32_t stickPressTic = 0;
+    static ScanCode stickNavKey = sc_None;
     uint32_t curTic = SDL_GetTicks();
 
-    if (kDown & HidNpadButton_Up)
-        sendKeyDown(sc_UpArrow);
-    else if (kUp & HidNpadButton_Up)
-        sendKeyUp(sc_UpArrow);
-
-    if (kDown & HidNpadButton_Down)
-        sendKeyDown(sc_DownArrow);
-    else if (kUp & HidNpadButton_Down)
-        sendKeyUp(sc_DownArrow);
-
-    if (kDown & HidNpadButton_Left)
-        sendKeyDown(sc_LeftArrow);
-    else if (kUp & HidNpadButton_Left)
-        sendKeyUp(sc_LeftArrow);
-
-    if (kDown & HidNpadButton_Right)
-        sendKeyDown(sc_RightArrow);
-    else if (kUp & HidNpadButton_Right)
-        sendKeyUp(sc_RightArrow);
-
-    // Left analog stick navigation in menus (repeat rate 180ms)
-    if (l_stick.y > 18000 && (curTic - lastStickTic > 180))
+    // D-Pad and Stick menu navigation: ONLY send keyboard arrow events
+    // when in a menu or pause screen. During gameplay, sticks and D-Pad are
+    // handled natively in Switch_PollGameControls to prevent stuck keys and conflicts.
+    if (!ingame || menuactive || Paused)
     {
-        lastStickTic = curTic;
-        sendKeyDown(sc_UpArrow);
+        if (kDown & HidNpadButton_Up)
+            sendKeyDown(sc_UpArrow);
+        else if (kUp & HidNpadButton_Up)
+            sendKeyUp(sc_UpArrow);
+
+        if (kDown & HidNpadButton_Down)
+            sendKeyDown(sc_DownArrow);
+        else if (kUp & HidNpadButton_Down)
+            sendKeyUp(sc_DownArrow);
+
+        if (kDown & HidNpadButton_Left)
+            sendKeyDown(sc_LeftArrow);
+        else if (kUp & HidNpadButton_Left)
+            sendKeyUp(sc_LeftArrow);
+
+        if (kDown & HidNpadButton_Right)
+            sendKeyDown(sc_RightArrow);
+        else if (kUp & HidNpadButton_Right)
+            sendKeyUp(sc_RightArrow);
+
+        // Left analog stick navigation in menus (repeat rate ~220ms, pulse 60ms)
+        const int MENU_STICK_DEAD_ZONE = 18000;
+        ScanCode currentStickKey = sc_None;
+        if (l_stick.y > MENU_STICK_DEAD_ZONE)
+            currentStickKey = sc_UpArrow;
+        else if (l_stick.y < -MENU_STICK_DEAD_ZONE)
+            currentStickKey = sc_DownArrow;
+        else if (l_stick.x < -MENU_STICK_DEAD_ZONE)
+            currentStickKey = sc_LeftArrow;
+        else if (l_stick.x > MENU_STICK_DEAD_ZONE)
+            currentStickKey = sc_RightArrow;
+
+        if (currentStickKey != sc_None)
+        {
+            if (currentStickKey != stickNavKey)
+            {
+                if (stickNavKey != sc_None)
+                    sendKeyUp(stickNavKey);
+                stickNavKey = currentStickKey;
+                stickPressTic = curTic;
+                lastStickTic = curTic;
+                sendKeyDown(currentStickKey);
+            }
+            else
+            {
+                // Repeat logic
+                if (curTic - lastStickTic > 220)
+                {
+                    lastStickTic = curTic;
+                    stickPressTic = curTic;
+                    sendKeyDown(currentStickKey);
+                }
+                else if (curTic - stickPressTic > 60)
+                {
+                    sendKeyUp(currentStickKey);
+                }
+            }
+        }
+        else
+        {
+            if (stickNavKey != sc_None)
+            {
+                sendKeyUp(stickNavKey);
+                stickNavKey = sc_None;
+            }
+        }
     }
-    else if (l_stick.y < -18000 && (curTic - lastStickTic > 180))
+    else
     {
-        lastStickTic = curTic;
-        sendKeyDown(sc_DownArrow);
-    }
-    else if (l_stick.x < -18000 && (curTic - lastStickTic > 180))
-    {
-        lastStickTic = curTic;
-        sendKeyDown(sc_LeftArrow);
-    }
-    else if (l_stick.x > 18000 && (curTic - lastStickTic > 180))
-    {
-        lastStickTic = curTic;
-        sendKeyDown(sc_RightArrow);
+        // When in game: ensure stick menu key is cleared and arrow keys are never stuck
+        if (stickNavKey != sc_None)
+        {
+            sendKeyUp(stickNavKey);
+            stickNavKey = sc_None;
+        }
+        Keyboard[sc_UpArrow] = 0;
+        Keyboard[sc_DownArrow] = 0;
+        Keyboard[sc_LeftArrow] = 0;
+        Keyboard[sc_RightArrow] = 0;
     }
 
     // A / ZR = Enter / Confirm
@@ -146,31 +192,25 @@ void Switch_PollGameControls()
     if (kDown & HidNpadButton_StickL)
         always_run = !always_run;
 
-    // D-Pad digital movement
+    // D-Pad digital movement (Up/Down: move forward/backward, Left/Right: strafe left/right)
     int delta = (buttonstate[bt_run] ^ always_run) ? RUNMOVE * tics : BASEMOVE * tics;
     if (kHeld & HidNpadButton_Up)
         controly -= delta;
     if (kHeld & HidNpadButton_Down)
         controly += delta;
     if (kHeld & HidNpadButton_Left)
-        controlx -= delta;
+        controlstrafe -= delta;
     if (kHeld & HidNpadButton_Right)
-        controlx += delta;
+        controlstrafe += delta;
 
     // Dual Analog Sticks
     HidAnalogStickState pos_left = padGetStickPos(&switch_pad, 0);
     HidAnalogStickState pos_right = padGetStickPos(&switch_pad, 1);
 
-    const int DEAD_ZONE = 3500;
+    const int DEAD_ZONE = 4000;
     const int MAX_ZONE = 28000;
 
-    // Left Stick X: Strafe Left / Right
-    if (pos_left.x < -DEAD_ZONE)
-        buttonstate[bt_strafeleft] = true;
-    else if (pos_left.x > DEAD_ZONE)
-        buttonstate[bt_straferight] = true;
-
-    // Left Stick Y: Analog forward / backward
+    // Left Stick: Analog forward / backward (GZDoom style)
     if (pos_left.y > DEAD_ZONE)
     {
         float speed = (float)(pos_left.y - DEAD_ZONE) / (float)(MAX_ZONE - DEAD_ZONE);
@@ -186,13 +226,29 @@ void Switch_PollGameControls()
         controly += move;
     }
 
-    // Right Stick X: Analog turning (with smooth quadratic curve)
+    // Left Stick: Analog strafe left / right (GZDoom style)
+    if (pos_left.x > DEAD_ZONE)
+    {
+        float speed = (float)(pos_left.x - DEAD_ZONE) / (float)(MAX_ZONE - DEAD_ZONE);
+        if (speed > 1.0f) speed = 1.0f;
+        int strafe = (int)(speed * (buttonstate[bt_run] ^ always_run ? RUNMOVE : BASEMOVE) * tics);
+        controlstrafe += strafe;
+    }
+    else if (pos_left.x < -DEAD_ZONE)
+    {
+        float speed = (float)(-pos_left.x - DEAD_ZONE) / (float)(MAX_ZONE - DEAD_ZONE);
+        if (speed > 1.0f) speed = 1.0f;
+        int strafe = (int)(speed * (buttonstate[bt_run] ^ always_run ? RUNMOVE : BASEMOVE) * tics);
+        controlstrafe -= strafe;
+    }
+
+    // Right Stick X: Analog turning (2x speed, smooth quadratic curve)
     if (pos_right.x < -DEAD_ZONE)
     {
         float speed = (float)(-pos_right.x - DEAD_ZONE) / (float)(MAX_ZONE - DEAD_ZONE);
         if (speed > 1.0f) speed = 1.0f;
         speed = speed * speed; // quadratic ramp for aiming precision
-        int turn = (int)(speed * (buttonstate[bt_run] ^ always_run ? RUNMOVE : BASEMOVE) * tics);
+        int turn = (int)(2.0f * speed * (buttonstate[bt_run] ^ always_run ? RUNMOVE : BASEMOVE) * tics);
         controlx -= turn;
     }
     else if (pos_right.x > DEAD_ZONE)
@@ -200,7 +256,7 @@ void Switch_PollGameControls()
         float speed = (float)(pos_right.x - DEAD_ZONE) / (float)(MAX_ZONE - DEAD_ZONE);
         if (speed > 1.0f) speed = 1.0f;
         speed = speed * speed;
-        int turn = (int)(speed * (buttonstate[bt_run] ^ always_run ? RUNMOVE : BASEMOVE) * tics);
+        int turn = (int)(2.0f * speed * (buttonstate[bt_run] ^ always_run ? RUNMOVE : BASEMOVE) * tics);
         controlx += turn;
     }
 }

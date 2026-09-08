@@ -74,7 +74,7 @@ memptr demobuffer;
 //
 // current user input
 //
-int controlx, controly;         // range from -100 to 100 per tic
+int controlx, controly, controlstrafe;         // range from -100 to 100 per tic
 boolean buttonstate[NUMBUTTONS];
 
 int lastgamemusicoffset = 0;
@@ -208,7 +208,7 @@ int songs[] = {
     XFUNKIE_MUS,
     XDEATH_MUS,
     XGETYOU_MUS,                // DON'T KNOW
-    ULTIMATE_MUS,               // Trans Gr”sse
+    ULTIMATE_MUS,               // Trans Grosse
 
     DUNGEON_MUS,
     GOINGAFT_MUS,
@@ -417,6 +417,7 @@ void PollControls (void)
 
     controlx = 0;
     controly = 0;
+    controlstrafe = 0;
     memcpy (buttonheld, buttonstate, sizeof (buttonstate));
     memset (buttonstate, 0, sizeof (buttonstate));
 
@@ -476,15 +477,28 @@ void PollControls (void)
 //
     max = 100 * tics;
     min = -max;
+#ifdef __SWITCH__
+    int max_turn = 200 * tics;
+    if (controlx > max_turn)
+        controlx = max_turn;
+    else if (controlx < -max_turn)
+        controlx = -max_turn;
+#else
     if (controlx > max)
         controlx = max;
     else if (controlx < min)
         controlx = min;
+#endif
 
     if (controly > max)
         controly = max;
     else if (controly < min)
         controly = min;
+
+    if (controlstrafe > max)
+        controlstrafe = max;
+    else if (controlstrafe < min)
+        controlstrafe = min;
 
     if (demorecord)
     {

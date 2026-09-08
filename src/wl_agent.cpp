@@ -233,6 +233,24 @@ void ControlMovement (objtype *ob)
         Thrust (angle,controly*BACKMOVESCALE);          // move backwards
     }
 
+    //
+    // strafe move (analog strafe from left stick)
+    //
+    if (controlstrafe > 0)
+    {
+        angle = ob->angle - ANGLES/4;
+        if (angle < 0)
+            angle += ANGLES;
+        Thrust (angle, controlstrafe * MOVESCALE);
+    }
+    else if (controlstrafe < 0)
+    {
+        angle = ob->angle + ANGLES/4;
+        if (angle >= ANGLES)
+            angle -= ANGLES;
+        Thrust (angle, -controlstrafe * MOVESCALE);
+    }
+
     if (gamestate.victoryflag)              // watching the BJ actor
         return;
 }
