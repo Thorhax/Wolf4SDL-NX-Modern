@@ -155,9 +155,10 @@ void Switch_PollGameControls()
 {
     Switch_InitInput();
 
-    padUpdate(&switch_pad);
     u64 kHeld = padGetButtons(&switch_pad);
-    u64 kDown = padGetButtonsDown(&switch_pad);
+    static u64 prevHeld = 0;
+    u64 kDown = kHeld & ~prevHeld;
+    prevHeld = kHeld;
 
     // Primary action buttons
     if ((kHeld & HidNpadButton_A) || (kHeld & HidNpadButton_ZR))
@@ -172,14 +173,14 @@ void Switch_PollGameControls()
     if ((kHeld & HidNpadButton_Y) || (kHeld & HidNpadButton_ZL))
         buttonstate[bt_run] = true;
 
-    // Weapon switching
-    if (kDown & HidNpadButton_R)
+    // Weapon switching: L = previous weapon (left), R = next weapon (right)
+    if (kHeld & HidNpadButton_R)
         buttonstate[bt_nextweapon] = true;
 
-    if (kDown & HidNpadButton_L)
+    if (kHeld & HidNpadButton_L)
         buttonstate[bt_prevweapon] = true;
 
-    if (kDown & HidNpadButton_StickR)
+    if (kHeld & HidNpadButton_StickR)
         buttonstate[bt_nextweapon] = true;
 
     // System keys
