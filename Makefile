@@ -28,7 +28,7 @@ ROMFS       :=  romfs
 
 APP_TITLE   := Wolfenstein 3D
 APP_AUTHOR  := Keeganator, Thorhax
-APP_VERSION := 2.1 NX
+APP_VERSION := 2.2 NX
 ICON        := icon.jpg
 
 #---------------------------------------------------------------------------------

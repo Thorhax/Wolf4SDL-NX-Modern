@@ -18,7 +18,7 @@ Port of Wolfenstein 3D to the Nintendo Switch based on Wolf4SDL, updated for mod
 | **Left Stick** | Analog Move (Y) & Strafe (X) | Navigate Menu Up / Down / Left / Right |
 | **Right Stick** | Smooth Turning (X) | — |
 | **D-Pad Up / Down** | Forward / Backward | Navigate Menu Up / Down |
-| **D-Pad Left / Right** | Turn Left / Right | Change Option Left / Right |
+| **D-Pad Left / Right** | Strafe Left / Right | Change Option Left / Right |
 | **A / ZR** | Fire / Attack | Confirm / Enter |
 | **B** | Open Door / Elevator / Secret | Cancel / Back / Escape |
 | **X** | Strafe Toggle | Answer "No" on prompts |
