@@ -41,3 +41,12 @@ Thumbs.db
 *.layout
 *.depend
 settings.json
+# devkitPro Switch build artifacts
+build/
+*.elf
+*.nacp
+*.nro
+*.nso
+*.pfs0
+*.map
+wolf4sdl_*.zip

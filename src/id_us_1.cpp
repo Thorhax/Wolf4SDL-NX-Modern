@@ -22,8 +22,6 @@
 
 #include "wl_def.h"
 
-#pragma	hdrstop
-
 #if _MSC_VER == 1200            // Visual C++ 6
 	#define vsnprintf _vsnprintf
 #endif
@@ -88,6 +86,8 @@ void US_Startup()
 {
 	if (US_Started)
 		return;
+
+	US_SetScanNames();
 
 	US_InitRndT(true);		// Initialize the random number generator
 
@@ -177,7 +177,7 @@ void
 US_PrintUnsigned(longword n)
 {
 	char	buffer[32];
-	sprintf(buffer, "%lu", n);
+	snprintf(buffer, sizeof(buffer), "%u", n);
 
 	US_Print(buffer);
 }
@@ -192,7 +192,7 @@ US_PrintSigned(int32_t n)
 {
 	char	buffer[32];
 
-	US_Print(ltoa(n,buffer,10));
+	US_Print(lntoa(n,sizeof(buffer),buffer));
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -301,7 +301,7 @@ void US_Printf(const char *formatStr, ...)
     va_start(vlist, formatStr);
     int len = vsnprintf(strbuf, sizeof(strbuf), formatStr, vlist);
     va_end(vlist);
-    if(len <= -1 || len >= sizeof(strbuf))
+    if(len <= -1 || (size_t)len >= sizeof(strbuf))
         strbuf[sizeof(strbuf) - 1] = 0;
     US_Print(strbuf);
 }
@@ -320,7 +320,7 @@ void US_CPrintf(const char *formatStr, ...)
     va_start(vlist, formatStr);
     int len = vsnprintf(strbuf, sizeof(strbuf), formatStr, vlist);
     va_end(vlist);
-    if(len <= -1 || len >= sizeof(strbuf))
+    if(len <= -1 || (size_t)len >= sizeof(strbuf))
         strbuf[sizeof(strbuf) - 1] = 0;
     US_CPrint(strbuf);
 }
@@ -488,11 +488,11 @@ US_LineInput(int x,int y,char *buf,const char *def,boolean escok,
 {
 	boolean		redraw,
 				cursorvis,cursormoved,
-				done,result, checkkey;
+				done,result = false, checkkey;
 	ScanCode	sc;
 	char		c;
 	char		s[MaxString],olds[MaxString];
-	int         cursor,len;
+	int         cursor,len = 0;
 	word		i,
 				w,h,
 				temp;
@@ -530,7 +530,7 @@ US_LineInput(int x,int y,char *buf,const char *def,boolean escok,
 		curtime = GetTimeCount();
 
 		// After each direction change accept the next change after 250 ms and then everz 125 ms
-		if(ci.dir != lastdir || curtime - lastdirtime > TickBase / 4 && curtime - lastdirmovetime > TickBase / 8)
+		if(ci.dir != lastdir || (curtime - lastdirtime > TickBase / 4 && curtime - lastdirmovetime > TickBase / 8))
 		{
 			if(ci.dir != lastdir)
 			{
@@ -558,7 +558,7 @@ US_LineInput(int x,int y,char *buf,const char *def,boolean escok,
 					if(!s[cursor])
 					{
 						USL_MeasureString(s,&w,&h);
-						if(len >= maxchars || maxwidth && w >= maxwidth) break;
+						if(len >= maxchars || (maxwidth && w >= maxwidth)) break;
 
 						s[cursor] = ' ';
 						s[cursor + 1] = 0;
@@ -572,7 +572,7 @@ US_LineInput(int x,int y,char *buf,const char *def,boolean escok,
 					if(!s[cursor])
 					{
 						USL_MeasureString(s,&w,&h);
-						if(len >= maxchars || maxwidth && w >= maxwidth) break;
+						if(len >= maxchars || (maxwidth && w >= maxwidth)) break;
 						s[cursor + 1] = 0;
 					}
 					s[cursor] = USL_RotateChar(s[cursor], 1);
@@ -584,12 +584,15 @@ US_LineInput(int x,int y,char *buf,const char *def,boolean escok,
 					if(!s[cursor])
 					{
 						USL_MeasureString(s,&w,&h);
-						if(len >= maxchars || maxwidth && w >= maxwidth) break;
+						if(len >= maxchars || (maxwidth && w >= maxwidth)) break;
 						s[cursor + 1] = 0;
 					}
 					s[cursor] = USL_RotateChar(s[cursor], -1);
 					redraw = true;
 					checkkey = false;
+					break;
+
+				default:
 					break;
 			}
 		}
@@ -678,14 +681,14 @@ US_LineInput(int x,int y,char *buf,const char *def,boolean escok,
 				case sc_Delete:
 					if (s[cursor])
 					{
-						strcpy(s + cursor,s + cursor + 1);
+						memmove(s + cursor,s + cursor + 1, MaxString - cursor - 1);
 						redraw = true;
 					}
 					c = key_None;
 					cursormoved = true;
 					break;
 
-				case SDLK_KP5: //0x4c:	// Keypad 5 // TODO: hmmm...
+				case SDLK_KP_5: //0x4c:	// Keypad 5 // TODO: hmmm...
 				case sc_UpArrow:
 				case sc_DownArrow:
 				case sc_PgUp:

@@ -7,7 +7,6 @@
 #endif
 
 #include "wl_def.h"
-#pragma hdrstop
 
 #ifdef USE_CLOUDSKY
 #include "wl_cloudsky.h"
@@ -52,7 +51,6 @@ void SimpleScaleShape (int xcenter, int shapenum, unsigned height);
 
 int     maporgx;
 int     maporgy;
-enum {mapview,tilemapview,actoratview,visview}  viewtype;
 
 void ViewMap (void);
 
@@ -79,7 +77,7 @@ void CountObjects (void)
     US_PrintUnsigned (total);
 
     char str[60];
-    sprintf(str,"\nlaststatobj=%.8X",(int32_t)(uintptr_t)laststatobj);
+    snprintf(str,sizeof(str),"\nlaststatobj=%.8X",(int32_t)(uintptr_t)laststatobj);
     US_Print(str);
 
     US_Print ("\nIn use statics:");
@@ -181,7 +179,7 @@ void BasicOverhead (void)
     // left side (filtered)
 
     uintptr_t tile;
-    int color;
+    int color = 0;
     offx -= 128;
 
     for(x=0;x<MAPSIZE;x++)
@@ -196,9 +194,9 @@ void BasicOverhead (void)
                 else color = 0;  // nothing
             }
             else if (MAPSPOT(x,y,1) == PUSHABLETILE) color = 171;  // pushwall
-            else if (tile == BIT_WALL) color = 158; // solid obj
-            else if (tile < BIT_DOOR) color = 154;  // walls
-            else if (tile < BIT_ALLTILES) color = 146;  // doors
+            else if (tile == 64) color = 158; // solid obj
+            else if (tile < 128) color = 154;  // walls
+            else if (tile < 256) color = 146;  // doors
 
             VWB_Bar(x*z+offx, y*z+offy,z,z,color);
         }
@@ -288,7 +286,7 @@ void ShapeTest (void)
 
         US_Print("\n Address: ");
         addr = (byte *) PM_GetPage(i);
-        sprintf(buf,"0x%08X",(int32_t) addr);
+        snprintf(buf,sizeof(buf),"0x%08X",(int32_t) addr);
         US_Print(buf);
 
         if (addr)
@@ -496,11 +494,11 @@ int DebugKeys (void)
         US_Print (" X:");    US_PrintUnsigned (player->tilex);
         US_Print (" Y:");    US_PrintUnsigned (player->tiley);
         US_Print ("\n1:");   US_PrintUnsigned (tilemap[player->tilex][player->tiley]);
-        sprintf(str," 2:%.8X",(unsigned)(uintptr_t)actorat[player->tilex][player->tiley]); US_Print(str);
+        snprintf(str,sizeof(str)," 2:%.8X",(unsigned)(uintptr_t)actorat[player->tilex][player->tiley]); US_Print(str);
         US_Print ("\nf 1:"); US_PrintUnsigned (player->areanumber);
         US_Print (" 2:");    US_PrintUnsigned (MAPSPOT(player->tilex,player->tiley,1));
         US_Print (" 3:");
-        if ((unsigned)(uintptr_t)actorat[player->tilex][player->tiley] < BIT_ALLTILES)
+        if ((unsigned)(uintptr_t)actorat[player->tilex][player->tiley] < 256)
             US_PrintUnsigned (spotvis[player->tilex][player->tiley]);
         else
             US_PrintUnsigned (actorat[player->tilex][player->tiley]->flags);
@@ -701,14 +699,14 @@ again:
         return 1;
     }
 #ifdef USE_CLOUDSKY
-    else if(Keyboard[sc_Z] && curSky)
+    else if(Keyboard[sc_Z])
     {
         char defstr[15];
 
         CenterWindow(34,4);
         PrintY+=6;
-        US_Print("  Recalculate sky with seed: ");
-        int seedpx = px, seedpy = py;
+        US_Print("  Recalculate sky with seek: ");
+        int seekpx = px, seekpy = py;
         US_PrintUnsigned(curSky->seed);
         US_Print("\n  Use color map (0-");
         US_PrintUnsigned(numColorMaps - 1);
@@ -717,12 +715,12 @@ again:
         US_PrintUnsigned(curSky->colorMapIndex);
         VW_UpdateScreen();
 
-        sprintf(defstr, "%u", curSky->seed);
-        esc = !US_LineInput(seedpx, seedpy, str, defstr, true, 10, 0);
+        snprintf(defstr, sizeof(defstr), "%u", curSky->seed);
+        esc = !US_LineInput(seekpx, seekpy, str, defstr, true, 10, 0);
         if(esc) return 0;
         curSky->seed = (uint32_t) atoi(str);
 
-        sprintf(defstr, "%u", curSky->colorMapIndex);
+        snprintf(defstr, sizeof(defstr), "%u", curSky->colorMapIndex);
         esc = !US_LineInput(mappx, mappy, str, defstr, true, 10, 0);
         if(esc) return 0;
         uint32_t newInd = (uint32_t) atoi(str);

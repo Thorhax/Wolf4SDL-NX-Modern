@@ -10,33 +10,40 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
-#if defined(_arch_dreamcast)
-#	include <string.h>
-#	include "dc/dc_main.h"
-#elif !defined(_WIN32)
+#include <unordered_map>
+#if !defined(_WIN32)
 #	include <stdint.h>
 #	include <string.h>
 #	include <stdarg.h>
 #endif
-#include <SDL/SDL.h>
-#include <switch.h>
+#include <SDL.h>
 
 #if !defined O_BINARY
 #	define O_BINARY 0
 #endif
 
-#pragma pack(1)
-
-#if defined(_arch_dreamcast)
-#define YESBUTTONNAME "A"
-#define NOBUTTONNAME  "B"
-#elif defined(GP2X)
-#define YESBUTTONNAME "Y"
-#define NOBUTTONNAME  "B"
+#if defined(_MSC_VER)
+# define PACKEDPREFIX __pragma(pack(push,1))
 #else
+# define PACKEDPREFIX
+#endif
+
+#if defined(__GNUC__)
+# if defined(_WIN32) && !defined(__clang__)
+#  define PACKEDSUFFIX __attribute__((packed,gcc_struct))
+# else
+#  define PACKEDSUFFIX __attribute__((packed))
+# endif
+#elif defined(_MSC_VER)
+# define PACKEDSUFFIX __pragma(pack(pop))
+#else
+# define PACKEDSUFFIX
+#endif
+
+#define PACKED_STRUCT(...) PACKEDPREFIX struct __VA_ARGS__ PACKEDSUFFIX
+
 #define YESBUTTONNAME "Y"
 #define NOBUTTONNAME  "N"
-#endif
 
 #include "foreign.h"
 
@@ -45,15 +52,11 @@
     #ifdef UPLOAD
         #include "gfxv_apo.h"
     #else
-		#ifdef JAPAN
-			#include "gfxv_jap.h"
-		#else
 			#ifdef GOODTIMES
 	            #include "gfxv_wl6.h"
 		    #else
 			    #include "gfxv_apo.h"
 			#endif
-        #endif
     #endif
 #else
     #include "audiosod.h"
@@ -108,24 +111,10 @@ void Quit(const char *errorStr, ...);
 #define MAXTICS 10
 #define DEMOTICS        4
 
-#define WALLSHIFT       6
-
-#define BIT_WALL        (1<<WALLSHIFT)
-#define BIT_DOOR        (1<<(WALLSHIFT+1))
-#define BIT_ALLTILES    (1<<(WALLSHIFT+2))
-#define LAST_WALLNUM    BIT_WALL-1
-#define LAST_DOORNUM    BIT_DOOR-1
-
 #define MAXACTORS       150         // max number of nazis, etc / map
 #define MAXSTATS        400         // max number of lamps, bonus, etc
 #define MAXDOORS        64          // max number of sliding doors
 #define MAXWALLTILES    64          // max number of wall tiles
-
-#if WALLSHIFT >= 7
-typedef uint16_t tiletype;
-#else
-typedef uint8_t tiletype;
-#endif
 
 //
 // tile constants
@@ -736,15 +725,18 @@ typedef enum {
 
 typedef void (* statefunc) (void *);
 
+#include "states.h" // [FG] statetype states[] array
+
 typedef struct statestruct
 {
     boolean rotate;
     short   shapenum;           // a shapenum of -1 means get from ob->temp1
     short   tictime;
     void    (*think) (void *),(*action) (void *);
-    struct  statestruct *next;
+    statenum_t next; // [FG] statetype states[] array
 } statetype;
 
+extern statetype states[numstates]; // [FG] statetype states[] array
 
 //---------------------
 //
@@ -752,14 +744,14 @@ typedef struct statestruct
 //
 //---------------------
 
-typedef struct statstruct
+typedef PACKED_STRUCT( statstruct
 {
     byte      tilex,tiley;
     short     shapenum;           // if shapenum == -1 the obj has been removed
     byte      *visspot;
     uint32_t  flags;
     byte      itemnumber;
-} statobj_t;
+}) statobj_t;
 
 
 //---------------------
@@ -773,14 +765,14 @@ typedef enum
     dr_open,dr_closed,dr_opening,dr_closing
 } doortype;
 
-typedef struct doorstruct
+typedef PACKED_STRUCT( doorstruct
 {
     byte     tilex,tiley;
     boolean  vertical;
     byte     lock;
     doortype action;
     short    ticcount;
-} doorobj_t;
+}) doorobj_t;
 
 
 //--------------------
@@ -789,7 +781,7 @@ typedef struct doorstruct
 //
 //--------------------
 
-typedef struct objstruct
+typedef PACKED_STRUCT( objstruct
 {
     activetype  active;
     short       ticcount;
@@ -815,23 +807,23 @@ typedef struct objstruct
 
     short       temp1,temp2,hidden;
     struct objstruct *next,*prev;
-} objtype;
+}) objtype;
 
 enum
 {
     bt_nobutton=-1,
-    bt_attack=0, // done
-    bt_strafe, // done
-    bt_run, // done
-    bt_use, // done
+    bt_attack=0,
+    bt_strafe,
+    bt_run,
+    bt_use,
     bt_readyknife,
     bt_readypistol,
     bt_readymachinegun,
     bt_readychaingun,
-    bt_nextweapon, // done
-    bt_prevweapon, // done
-    bt_esc, // done
-    bt_pause, // done
+    bt_nextweapon,
+    bt_prevweapon,
+    bt_esc,
+    bt_pause,
     bt_strafeleft,
     bt_straferight,
     bt_moveforward,
@@ -845,6 +837,7 @@ enum
 #define NUMWEAPONS      4
 typedef enum
 {
+    wp_none = -1,
     wp_knife,
     wp_pistol,
     wp_machinegun,
@@ -866,7 +859,7 @@ enum
 //
 //---------------
 
-typedef struct
+typedef PACKED_STRUCT(
 {
     short       difficulty;
     short       mapon;
@@ -885,7 +878,7 @@ typedef struct
     int32_t     TimeCount;
     int32_t     killx,killy;
     boolean     victoryflag;            // set during victory animations
-} gametype;
+}) gametype;
 
 
 typedef enum
@@ -925,7 +918,7 @@ extern  fixed    scale;
 
 extern  int      dirangle[9];
 
-extern  int      mouseadjustment;
+extern  int      mouseadjustment, mouseadjustment_v;
 extern  int      shootdelta;
 extern  unsigned screenofs;
 
@@ -946,8 +939,9 @@ extern  int      param_joystickhat;
 extern  int      param_samplerate;
 extern  int      param_audiobuffer;
 extern  int      param_mission;
-extern  boolean  param_goodtimes;
 extern  boolean  param_ignorenumchunks;
+extern  boolean  always_run;
+extern  boolean  crosshair;
 
 
 void            NewGame (int difficulty,int episode);
@@ -1017,7 +1011,7 @@ void UpdateSoundLoc(void);
 
 #define JOYSCALE                2
 
-extern  tiletype        tilemap[MAPSIZE][MAPSIZE];      // wall values only
+extern  byte            tilemap[MAPSIZE][MAPSIZE];      // wall values only
 extern  byte            spotvis[MAPSIZE][MAPSIZE];
 extern  objtype         *actorat[MAPSIZE][MAPSIZE];
 
@@ -1239,8 +1233,8 @@ extern  boolean   areabyplayer[NUMAREAS];
 extern word     pwallstate;
 extern word     pwallpos;        // amount a pushable wall has been moved (0-63)
 extern word     pwallx,pwally;
-extern byte     pwalldir;
-extern tiletype pwalltile;
+extern byte     pwalldir,pwalltile;
+
 
 void InitDoorList (void);
 void InitStaticList (void);
@@ -1263,67 +1257,6 @@ void InitAreas (void);
 */
 
 #define s_nakedbody s_static10
-
-extern  statetype s_grddie1;
-extern  statetype s_dogdie1;
-extern  statetype s_ofcdie1;
-extern  statetype s_mutdie1;
-extern  statetype s_ssdie1;
-extern  statetype s_bossdie1;
-extern  statetype s_schabbdie1;
-extern  statetype s_fakedie1;
-extern  statetype s_mechadie1;
-extern  statetype s_hitlerdie1;
-extern  statetype s_greteldie1;
-extern  statetype s_giftdie1;
-extern  statetype s_fatdie1;
-
-extern  statetype s_spectredie1;
-extern  statetype s_angeldie1;
-extern  statetype s_transdie0;
-extern  statetype s_uberdie0;
-extern  statetype s_willdie1;
-extern  statetype s_deathdie1;
-
-
-extern  statetype s_grdchase1;
-extern  statetype s_dogchase1;
-extern  statetype s_ofcchase1;
-extern  statetype s_sschase1;
-extern  statetype s_mutchase1;
-extern  statetype s_bosschase1;
-extern  statetype s_schabbchase1;
-extern  statetype s_fakechase1;
-extern  statetype s_mechachase1;
-extern  statetype s_gretelchase1;
-extern  statetype s_giftchase1;
-extern  statetype s_fatchase1;
-
-extern  statetype s_spectrechase1;
-extern  statetype s_angelchase1;
-extern  statetype s_transchase1;
-extern  statetype s_uberchase1;
-extern  statetype s_willchase1;
-extern  statetype s_deathchase1;
-
-extern  statetype s_blinkychase1;
-extern  statetype s_hitlerchase1;
-
-extern  statetype s_grdpain;
-extern  statetype s_grdpain1;
-extern  statetype s_ofcpain;
-extern  statetype s_ofcpain1;
-extern  statetype s_sspain;
-extern  statetype s_sspain1;
-extern  statetype s_mutpain;
-extern  statetype s_mutpain1;
-
-extern  statetype s_deathcam;
-
-extern  statetype s_schabbdeathcam2;
-extern  statetype s_hitlerdeathcam2;
-extern  statetype s_giftdeathcam2;
-extern  statetype s_fatdeathcam2;
 
 void SpawnStand (enemy_t which, int tilex, int tiley, int dir);
 void SpawnPatrol (enemy_t which, int tilex, int tiley, int dir);
@@ -1365,26 +1298,6 @@ extern  void    EndText(void);
 /*
 =============================================================================
 
-                               GP2X DEFINITIONS
-
-=============================================================================
-*/
-
-#if defined(GP2X)
-
-#if defined(GP2X_940)
-void GP2X_MemoryInit(void);
-void GP2X_Shutdown(void);
-#endif
-void GP2X_ButtonDown(int button);
-void GP2X_ButtonUp(int button);
-
-#endif
-
-
-/*
-=============================================================================
-
                              MISC DEFINITIONS
 
 =============================================================================
@@ -1416,19 +1329,19 @@ static inline fixed FixedMul(fixed a, fixed b)
     #define strcasecmp stricmp
     #define strncasecmp strnicmp
     #define snprintf _snprintf
-#else
-    /*static inline char* itoa(int value, char* string, int radix)
-    {
-	    sprintf(string, "%d", value);
-	    return string;
-    }*/
-
-    static inline char* ltoa(long value, char* string, int radix)
-    {
-	    sprintf(string, "%ld", value);
-	    return string;
-    }
 #endif
+
+static inline char* intoa(int value, size_t size, char* string)
+{
+    snprintf(string, size, "%d", value);
+    return string;
+}
+
+static inline char* lntoa(long value, size_t size, char* string)
+{
+    snprintf(string, size, "%ld", value);
+    return string;
+}
 
 #define lengthof(x) (sizeof(x) / sizeof(*(x)))
 #define endof(x)    ((x) + lengthof(x))

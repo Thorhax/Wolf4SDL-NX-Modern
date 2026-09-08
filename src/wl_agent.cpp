@@ -1,7 +1,6 @@
 // WL_AGENT.C
 
 #include "wl_def.h"
-#pragma hdrstop
 
 /*
 =============================================================================
@@ -50,9 +49,6 @@ objtype        *LastAttacker;
 
 void    T_Player (objtype *ob);
 void    T_Attack (objtype *ob);
-
-statetype   s_player = {false,0,0,(statefunc) T_Player,NULL,NULL};
-statetype   s_attack = {false,0,0,(statefunc) T_Attack,NULL,NULL};
 
 struct atkinf
 {
@@ -107,15 +103,6 @@ void CheckWeaponChange (void)
     if (!gamestate.ammo)            // must use knife with no ammo
         return;
 
-#ifdef _arch_dreamcast
-    int joyx, joyy;
-    IN_GetJoyFineDelta (&joyx, &joyy);
-    if(joyx < -64)
-        buttonstate[bt_prevweapon] = true;
-    else if(joyx > 64)
-        buttonstate[bt_nextweapon] = true;
-#endif
-
     if(buttonstate[bt_nextweapon] && !buttonheld[bt_nextweapon])
     {
         newWeapon = gamestate.weapon + 1;
@@ -163,46 +150,20 @@ void CheckWeaponChange (void)
 
 void ControlMovement (objtype *ob)
 {
-    int32_t oldx,oldy;
     int     angle;
     int     angleunits;
 
     thrustspeed = 0;
-
-    oldx = player->x;
-    oldy = player->y;
-
-    JoystickPosition pos_left, pos_right;
-
-    //Read the joysticks' position
-    hidJoystickRead(&pos_left, CONTROLLER_P1_AUTO, JOYSTICK_LEFT);
-    hidJoystickRead(&pos_right, CONTROLLER_P1_AUTO, JOYSTICK_RIGHT);
-
-    float strafespeed = 0;
-    int JOYSTICK_DEAD_ZONE = 3000;
-    int JOYSTICK_MAX_ZONE = 30000;
-    if( pos_left.dx < -JOYSTICK_DEAD_ZONE)
-    {
-        strafespeed = floor((float)((float)-pos_left.dx/(float)32767)*(float)35);
-    }
-    if( pos_left.dx > JOYSTICK_DEAD_ZONE)
-    {
-        strafespeed = floor((float)((float)pos_left.dx/(float)32767)*(float)35);
-    }
-    if( pos_left.dx < -JOYSTICK_MAX_ZONE || pos_left.dx > JOYSTICK_MAX_ZONE)
-    {
-        strafespeed = 35;
-    }
 
     if(buttonstate[bt_strafeleft])
     {
         angle = ob->angle + ANGLES/4;
         if(angle >= ANGLES)
             angle -= ANGLES;
-        if(buttonstate[bt_run])
-            Thrust(angle, (strafespeed*2) * MOVESCALE * tics);
+        if(buttonstate[bt_run] ^ always_run) // [FG] toggle always run
+            Thrust(angle, RUNMOVE * MOVESCALE * tics);
         else
-            Thrust(angle, strafespeed * MOVESCALE * tics);
+            Thrust(angle, BASEMOVE * MOVESCALE * tics);
     }
 
     if(buttonstate[bt_straferight])
@@ -210,10 +171,10 @@ void ControlMovement (objtype *ob)
         angle = ob->angle - ANGLES/4;
         if(angle < 0)
             angle += ANGLES;
-        if(buttonstate[bt_run])
-            Thrust(angle, (strafespeed*2) * MOVESCALE * tics );
+        if(buttonstate[bt_run] ^ always_run) // [FG] toggle always run
+            Thrust(angle, RUNMOVE * MOVESCALE * tics );
         else
-            Thrust(angle, strafespeed * MOVESCALE * tics);
+            Thrust(angle, BASEMOVE * MOVESCALE * tics);
     }
 
     //
@@ -302,10 +263,6 @@ void StatusDrawPic (unsigned x, unsigned y, unsigned picnum)
 void StatusDrawFace(unsigned picnum)
 {
     StatusDrawPic(17, 4, picnum);
-
-#ifdef _arch_dreamcast
-    DC_StatusDrawLCD(picnum);
-#endif
 }
 
 
@@ -398,7 +355,7 @@ static void LatchNumber (int x, int y, unsigned width, int32_t number)
     unsigned length,c;
     char    str[20];
 
-    ltoa (number,str,10);
+    lntoa (number,sizeof(str),str);
 
     length = (unsigned) strlen (str);
 
@@ -724,9 +681,6 @@ void GiveKey (int key)
 */
 void GetBonus (statobj_t *check)
 {
-    if (playstate == ex_died)   // ADDEDFIX 31 - Chris
-        return;
-
     switch (check->itemnumber)
     {
         case    bo_firstaid:
@@ -885,7 +839,7 @@ boolean TryMove (objtype *ob)
             check = actorat[x][y];
             if (check && !ISPOINTER(check))
             {
-                if(tilemap[x][y]==BIT_WALL && x==pwallx && y==pwally)   // back of moving pushwall?
+                if(tilemap[x][y]==64 && x==pwallx && y==pwally)   // back of moving pushwall?
                 {
                     switch(pwalldir)
                     {
@@ -1101,7 +1055,7 @@ void Cmd_Fire (void)
 
     gamestate.weaponframe = 0;
 
-    player->state = &s_attack;
+    player->state = &states[s_attack];
 
     gamestate.attackframe = 0;
     gamestate.attackcount =
@@ -1182,10 +1136,10 @@ void Cmd_Use (void)
         SD_PlaySound (LEVELDONESND);
         SD_WaitSoundDone();
     }
-    else if (!buttonheld[bt_use] && doornum & BIT_DOOR)
+    else if (!buttonheld[bt_use] && doornum & 0x80)
     {
         buttonheld[bt_use] = true;
-        OperateDoor (doornum & ~BIT_DOOR);
+        OperateDoor (doornum & ~0x80);
     }
     else
         SD_PlaySound (DONOTHINGSND);
@@ -1218,7 +1172,7 @@ void SpawnPlayer (int tilex, int tiley, int dir)
     player->areanumber = (byte) *(mapsegs[0]+(player->tiley<<mapshift)+player->tilex);
     player->x = ((int32_t)tilex<<TILESHIFT)+TILEGLOBAL/2;
     player->y = ((int32_t)tiley<<TILESHIFT)+TILEGLOBAL/2;
-    player->state = &s_player;
+    player->state = &states[s_player];
     player->angle = (1-dir)*90;
     if (player->angle<0)
         player->angle += ANGLES;
@@ -1292,6 +1246,8 @@ void    GunAttack (objtype *ob)
             break;
         case wp_chaingun:
             SD_PlaySound (ATKGATLINGSND);
+            break;
+        default:
             break;
     }
 
@@ -1434,7 +1390,7 @@ void    T_Attack (objtype *ob)
         switch (cur->attack)
         {
             case -1:
-                ob->state = &s_player;
+                ob->state = &states[s_player];
                 if (!gamestate.ammo)
                 {
                     gamestate.weapon = wp_knife;

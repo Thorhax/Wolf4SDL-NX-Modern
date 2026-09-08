@@ -1,7 +1,9 @@
 // WL_PLAY.C
 
 #include "wl_def.h"
-#pragma hdrstop
+#ifdef __SWITCH__
+#include "switch_input.h"
+#endif
 
 #include "wl_cloudsky.h"
 #include "wl_shade.h"
@@ -38,7 +40,7 @@ objtype *newobj, *obj, *player, *lastobj, *objfreelist, *killerobj;
 boolean noclip, ammocheat;
 int godmode, singlestep, extravbls = 0;
 
-tiletype tilemap[MAPSIZE][MAPSIZE]; // wall values only
+byte tilemap[MAPSIZE][MAPSIZE]; // wall values only
 byte spotvis[MAPSIZE][MAPSIZE];
 objtype *actorat[MAPSIZE][MAPSIZE];
 
@@ -55,13 +57,8 @@ int dirscan[4] = { sc_UpArrow, sc_RightArrow, sc_DownArrow, sc_LeftArrow };
 int buttonscan[NUMBUTTONS] = { sc_Control, sc_Alt, sc_LShift, sc_Space, sc_1, sc_2, sc_3, sc_4 };
 int buttonmouse[4] = { bt_attack, bt_strafe, bt_use, bt_nobutton };
 int buttonjoy[32] = {
-#ifdef _arch_dreamcast
-    bt_attack, bt_strafe, bt_use, bt_run, bt_esc, bt_prevweapon, bt_nobutton, bt_nextweapon,
-    bt_pause, bt_strafeleft, bt_straferight, bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton,
-#else
     bt_attack, bt_strafe, bt_use, bt_run, bt_strafeleft, bt_straferight, bt_esc, bt_pause,
     bt_prevweapon, bt_nextweapon, bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton,
-#endif
     bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton,
     bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton, bt_nobutton
 };
@@ -211,7 +208,7 @@ int songs[] = {
     XFUNKIE_MUS,
     XDEATH_MUS,
     XGETYOU_MUS,                // DON'T KNOW
-    ULTIMATE_MUS,               // Trans Grosse
+    ULTIMATE_MUS,               // Trans Gr”sse
 
     DUNGEON_MUS,
     GOINGAFT_MUS,
@@ -315,7 +312,7 @@ void PollJoystickButtons (void)
 
 void PollKeyboardMove (void)
 {
-    int delta = buttonstate[bt_run] ? RUNMOVE * tics : BASEMOVE * tics;
+    int delta = (buttonstate[bt_run] ^ always_run) ? RUNMOVE * tics : BASEMOVE * tics; // [FG] toggle always run
 
     if (Keyboard[dirscan[di_north]])
         controly -= delta;
@@ -340,15 +337,13 @@ void PollMouseMove (void)
 {
     int mousexmove, mouseymove;
 
-    SDL_GetMouseState(&mousexmove, &mouseymove);
-    if(IN_IsInputGrabbed())
-        IN_CenterMouse();
+    SDL_GetRelativeMouseState(&mousexmove, &mouseymove);
 
-    mousexmove -= screenWidth / 2;
-    mouseymove -= screenHeight / 2;
-
+    // [FG] no sensitivity means no movement
+    if (mouseadjustment)
     controlx += mousexmove * 10 / (13 - mouseadjustment);
-    controly += mouseymove * 20 / (13 - mouseadjustment);
+    if (mouseadjustment_v)
+    controly += mouseymove * 20 / (13 - mouseadjustment_v);
 }
 
 
@@ -366,7 +361,7 @@ void PollJoystickMove (void)
 
     IN_GetJoyDelta (&joyx, &joyy);
 
-    int delta = buttonstate[bt_run] ? RUNMOVE * tics : BASEMOVE * tics;
+    int delta = (buttonstate[bt_run] ^ always_run) ? RUNMOVE * tics : BASEMOVE * tics; // [FG] toggle always run
 
     if (joyx > 64 || buttonstate[bt_turnright])
         controlx += delta;
@@ -453,169 +448,28 @@ void PollControls (void)
 //
 // get button states
 //
-    //PollKeyboardButtons ();
-    hidScanInput();
+    PollKeyboardButtons ();
 
-    u32 kDown = hidKeysHeld(CONTROLLER_P1_AUTO);
-
-    //u32 kToggle = hidKeysDown(CONTROLLER_P1_AUTO);
-
-    if((kDown & KEY_A) || (kDown & KEY_ZR))
-        buttonstate[bt_attack] = true;
-
-    if((kDown & KEY_B))
-        buttonstate[bt_use] = true;
-
-    if((kDown & KEY_X))
-        buttonstate[bt_strafe] = true;
-
-    if((kDown & KEY_Y) || (kDown & KEY_ZL))
-        buttonstate[bt_run] = true;
-
-    if((kDown & KEY_R))
-        buttonstate[bt_nextweapon] = true;
-
-    if((kDown & KEY_L))
-        buttonstate[bt_prevweapon] = true;
-
-    if((kDown & KEY_MINUS))
-        buttonstate[bt_esc] = true;
-
-    if((kDown & KEY_PLUS))
-        buttonstate[bt_pause] = true;
-
-    /*if (mouseenabled && IN_IsInputGrabbed())
+    if (mouseenabled)
         PollMouseButtons ();
 
     if (joystickenabled)
-        PollJoystickButtons ();*/
+        PollJoystickButtons ();
 
 //
 // get movements
 //
+    PollKeyboardMove ();
 
-    // keyboard movement code
-    int delta = buttonstate[bt_run] ? RUNMOVE * tics : BASEMOVE * tics;
-
-    /*if((kDown & KEY_DUP))
-        buttonstate[bt_moveforward] = true;
-    if((kDown & KEY_DDOWN))
-        buttonstate[bt_movebackward] = true;
-    if((kDown & KEY_DLEFT))
-        buttonstate[bt_turnleft] = true;
-    if((kDown & KEY_DRIGHT))
-        buttonstate[bt_turnright] = true;*/
-
-    if((kDown & KEY_DUP))
-        controly -= delta;
-    if((kDown & KEY_DDOWN))
-        controly += delta;
-    if((kDown & KEY_DLEFT))
-        controlx -= delta;
-    if((kDown & KEY_DRIGHT))
-        controlx += delta;
-
-    JoystickPosition pos_left, pos_right;
-
-    //Read the joysticks' position
-    hidJoystickRead(&pos_left, CONTROLLER_P1_AUTO, JOYSTICK_LEFT);
-    hidJoystickRead(&pos_right, CONTROLLER_P1_AUTO, JOYSTICK_RIGHT);
-    float turnspeed = 0;
-    float movespeed = 0;
-
-    int JOYSTICK_DEAD_ZONE = 3000;
-    int JOYSTICK_MAX_ZONE = 30000;
-
-    if( pos_left.dx < 0)
-    {
-        buttonstate[bt_strafeleft] = true;
-    }
-    else if( pos_left.dx > 0)
-    {
-        buttonstate[bt_straferight] = true;
-    }
-    if( pos_left.dy < -JOYSTICK_DEAD_ZONE)
-    {
-        movespeed = floor((float)((float)pos_left.dy/(float)32767)*(float)35);
-        if( pos_left.dy < -JOYSTICK_MAX_ZONE )
-        {
-            movespeed = -35;
-        }
-        delta = buttonstate[bt_run] ? (movespeed*2) * tics : movespeed * tics;
-        controly -= delta;
-    }
-    if( pos_left.dy > JOYSTICK_DEAD_ZONE)
-    {
-        movespeed = floor((float)((float)-pos_left.dy/(float)32767)*(float)35);
-        if( pos_left.dy > JOYSTICK_MAX_ZONE)
-        {
-            movespeed = -35;
-        }
-        delta = buttonstate[bt_run] ? (movespeed*2) * tics : movespeed * tics;
-        controly += delta;
-    }
-    if( pos_right.dx < -JOYSTICK_DEAD_ZONE)
-    {
-        turnspeed = floor((float)((float)-pos_right.dx/(float)32767)*(float)35);
-        if( pos_right.dx < -JOYSTICK_MAX_ZONE)
-        {
-            turnspeed = 35;
-        }
-        delta = buttonstate[bt_run] ? (turnspeed*2) * tics : turnspeed * tics;
-        controlx -= delta;
-    }
-    else if( pos_right.dx > JOYSTICK_DEAD_ZONE)
-    {
-        turnspeed = floor((float)((float)pos_right.dx/(float)32767)*(float)35);
-        if( pos_right.dx > JOYSTICK_MAX_ZONE)
-        {
-            turnspeed = 35;
-        }
-        delta = buttonstate[bt_run] ? (turnspeed*2) * tics : turnspeed * tics;
-        controlx += delta;
-    }
-
-    
-    
-
-    /*if((kDown & KEY_LSTICK_LEFT) && !(kDown & KEY_X))
-        buttonstate[bt_strafeleft] = true;
-    else if((kDown & KEY_LSTICK_LEFT) && (kDown & KEY_X))
-        controlx -= delta;
-    if((kDown & KEY_LSTICK_RIGHT))
-        buttonstate[bt_straferight] = true;
-    else if((kDown & KEY_LSTICK_RIGHT) && (kDown & KEY_X))
-        controlx += delta;
-
-    if((kDown & KEY_RSTICK_LEFT))
-        controlx -= delta;
-    if((kDown & KEY_RSTICK_RIGHT))
-        controlx += delta;
-
-
-        */
-    /*if((kDown & KEY_LSITCK_DUP))
-        controly -= delta;
-    if((kDown & KEY_LSITCK_DUP))
-        controly -= delta;*/
-
-    /*if (Keyboard[dirscan[di_north]])
-        controly -= delta;
-    if (Keyboard[dirscan[di_south]])
-        controly += delta;
-    if (Keyboard[dirscan[di_west]])
-        controlx -= delta;
-    if (Keyboard[dirscan[di_east]])
-        controlx += delta;*/
-
-
-    //PollKeyboardMove ();
-
-    /*if (mouseenabled && IN_IsInputGrabbed())
+    if (mouseenabled)
         PollMouseMove ();
 
     if (joystickenabled)
-        PollJoystickMove ();*/
+        PollJoystickMove ();
+
+#ifdef __SWITCH__
+    Switch_PollGameControls();
+#endif
 
 //
 // bound movement to a maximum
@@ -809,17 +663,16 @@ void CheckKeys (void)
 //
 // pause key weirdness can't be checked as a scan code
 //
-    if(buttonstate[bt_pause]) Paused = true;              // PAUSE GAME CODE //
+    if(buttonstate[bt_pause]) Paused = true;
     if(Paused)
     {
+        IN_UpdateGrab();
         int lastoffs = StopMusic();
         LatchDrawPic (20 - 4, 80 - 2 * 8, PAUSEDPIC);
         VH_UpdateScreen();
         IN_Ack ();
         Paused = false;
         ContinueMusic(lastoffs);
-        if (MousePresent && IN_IsInputGrabbed())
-            IN_CenterMouse();     // Clear accumulated mouse movement
         lasttimecount = GetTimeCount();
         return;
     }
@@ -828,13 +681,9 @@ void CheckKeys (void)
 // F1-F7/ESC to enter control panel
 //
     if (
-#ifndef DEBCHECK
            scan == sc_F10 ||
-#endif
-           scan == sc_F9 || scan == sc_F7 || scan == sc_F8)     // pop up quit dialog // RETURN TO MENU (QUICK) CODE //
+           scan == sc_F9 || scan == sc_F7 || scan == sc_F8)     // pop up quit dialog
     {
-        short oldmapon = gamestate.mapon;
-        short oldepisode = gamestate.episode;
         ClearMemory ();
         ClearSplitVWB ();
         US_ControlPanel (scan);
@@ -846,7 +695,7 @@ void CheckKeys (void)
         return;
     }
 
-    if (buttonstate[bt_esc])         // RETURN TO MENU (FADE) CODE //
+    if ((scan >= sc_F1 && scan <= sc_F9) || scan == sc_Escape || buttonstate[bt_esc])
     {
         int lastoffs = StopMusic ();
         ClearMemory ();
@@ -864,8 +713,6 @@ void CheckKeys (void)
         if (loadedgame)
             playstate = ex_abort;
         lasttimecount = GetTimeCount();
-        if (MousePresent && IN_IsInputGrabbed())
-            IN_CenterMouse();     // Clear accumulated mouse movement
         return;
     }
 
@@ -880,9 +727,6 @@ void CheckKeys (void)
         SETFONTCOLOR (0, 15);
         if (DebugKeys () && viewsize < 20)
             DrawPlayBorder ();       // dont let the blue borders flash
-
-        if (MousePresent && IN_IsInputGrabbed())
-            IN_CenterMouse();     // Clear accumulated mouse movement
 
         lasttimecount = GetTimeCount();
         return;
@@ -1300,7 +1144,7 @@ void DoActor (objtype * ob)
 {
     void (*think) (objtype *);
 
-    if (!ob->active && ob->areanumber < NUMAREAS && !areabyplayer[ob->areanumber])
+    if (!ob->active && !areabyplayer[ob->areanumber])
         return;
 
     if (!(ob->flags & (FL_NONMARK | FL_NEVERMARK)))
@@ -1350,7 +1194,7 @@ void DoActor (objtype * ob)
             }
         }
 
-        ob->state = ob->state->next;
+        ob->state = &states[ob->state->next];
 
         if (!ob->state)
         {
@@ -1406,7 +1250,6 @@ int32_t funnyticount;
 
 void PlayLoop (void)
 {
-    printf("PLAY LOOP START\n");
 #if defined(USE_FEATUREFLAGS) && defined(USE_CLOUDSKY)
     if(GetFeatureFlags() & FF_CLOUDSKY)
         InitSky();
@@ -1425,13 +1268,9 @@ void PlayLoop (void)
     memset (buttonstate, 0, sizeof (buttonstate));
     ClearPaletteShifts ();
 
-    if (MousePresent && IN_IsInputGrabbed())
-        IN_CenterMouse();         // Clear accumulated mouse movement
-
     if (demoplayback)
         IN_StartAck ();
 
-    printf("LOOP HERE\n");
     do
     {
         PollControls ();
@@ -1472,6 +1311,7 @@ void PlayLoop (void)
             VW_FadeIn ();
 
         CheckKeys ();
+        IN_UpdateGrab();
 
 //
 // debug aids

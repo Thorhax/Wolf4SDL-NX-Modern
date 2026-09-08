@@ -28,39 +28,13 @@
 //
 
 #include "wl_def.h"
-#include <SDL/SDL_mixer.h>
-#if defined(GP2X_940)
-#include "gp2x/fmopl.h"
-#else
-#ifdef USE_GPL
-#include "dosbox/dbopl.h"
-#else
-#include "mame/fmopl.h"
-#endif
-#endif
+#include <SDL_mixer.h>
+#include "opl3.h"
 
 #define ORIGSAMPLERATE 7042
 
-typedef struct
-{
-	char RIFF[4];
-	longword filelenminus8;
-	char WAVE[4];
-	char fmt_[4];
-	longword formatlen;
-	word val0x0001;
-	word channels;
-	longword samplerate;
-	longword bytespersec;
-	word bytespersample;
-	word bitspersample;
-} headchunk;
-
-typedef struct
-{
-	char chunkid[4];
-	longword chunklength;
-} wavechunk;
+static Uint16 mix_format;
+static int mix_channels;
 
 typedef struct
 {
@@ -68,7 +42,10 @@ typedef struct
     uint32_t length;
 } digiinfo;
 
-static Mix_Chunk *SoundChunks[ STARTMUSIC - STARTDIGISOUNDS];
+static Mix_Chunk SoundChunks[STARTMUSIC - STARTDIGISOUNDS] = {{0}};
+
+// [DenisBelmondo] backport ecwolf/k1n9_duk3 fixes
+SDL_mutex *audioMutex;
 
 globalsoundpos channelSoundPos[MIX_CHANNELS];
 
@@ -117,75 +94,16 @@ static  int                     sqHackLen;
 static  int                     sqHackSeqLen;
 static  longword                sqHackTime;
 
-#ifdef USE_GPL
+opl3_chip oplChip;
 
-DBOPL::Chip oplChip;
-
-static inline bool YM3812Init(int numChips, int clock, int rate)
-{
-	oplChip.Setup(rate);
-	return false;
-}
-
-static inline void YM3812Write(DBOPL::Chip &which, Bit32u reg, Bit8u val)
-{
-	which.WriteReg(reg, val);
-}
-
-static inline void YM3812UpdateOne(DBOPL::Chip &which, int16_t *stream, int length)
-{
-	Bit32s buffer[512 * 2];
-	int i;
-
-	// length is at maximum samplesPerMusicTick = param_samplerate / 700
-	// so 512 is sufficient for a sample rate of 358.4 kHz (default 44.1 kHz)
-	if(length > 512)
-		length = 512;
-
-	if(which.opl3Active)
-	{
-		which.GenerateBlock3(length, buffer);
-
-		// GenerateBlock3 generates a number of "length" 32-bit stereo samples
-		// so we only need to convert them to 16-bit samples
-		for(i = 0; i < length * 2; i++)  // * 2 for left/right channel
-		{
-			// Multiply by 4 to match loudness of MAME emulator.
-			Bit32s sample = buffer[i] << 2;
-			if(sample > 32767) sample = 32767;
-			else if(sample < -32768) sample = -32768;
-			stream[i] = sample;
-		}
-	}
-	else
-	{
-		which.GenerateBlock2(length, buffer);
-
-		// GenerateBlock3 generates a number of "length" 32-bit mono samples
-		// so we need to convert them to 32-bit stereo samples
-		for(i = 0; i < length; i++)
-		{
-			// Multiply by 4 to match loudness of MAME emulator.
-			// Then upconvert to stereo.
-			Bit32s sample = buffer[i] << 2;
-			if(sample > 32767) sample = 32767;
-			else if(sample < -32768) sample = -32768;
-			stream[i * 2] = stream[i * 2 + 1] = (int16_t) sample;
-		}
-	}
-}
-
-#else
-
-static const int oplChip = 0;
-
-#endif
+#define alOut(n,b) OPL3_WriteRegBuffered(&oplChip, n, b)
 
 static void SDL_SoundFinished(void)
 {
 	SoundNumber   = (soundnames)0;
 	SoundPriority = 0;
 }
+
 
 ///////////////////////////////////////////////////////////////////////////
 //
@@ -195,7 +113,7 @@ static void SDL_SoundFinished(void)
 static void
 SDL_PCPlaySound(PCSound *sound)
 {
-        pcLastSample = (byte)-1;
+        pcLastSample = -1;
         pcLengthLeft = sound->common.length;
         pcSound = sound->data;
 }
@@ -231,6 +149,7 @@ static void SDL_PCMixCallback(void *udata, Uint8 *stream, int len)
     static int current_freq = 0;
     static int phase_offset = 0;
 
+    void *streamp = stream;
     Sint16 *leftptr;
     Sint16 *rightptr;
     Sint16 this_value;
@@ -242,8 +161,8 @@ static void SDL_PCMixCallback(void *udata, Uint8 *stream, int len)
 
     nsamples = len / 4;
 
-    leftptr = (Sint16 *) stream;
-    rightptr = ((Sint16 *) stream) + 1;
+    leftptr = (Sint16 *) streamp;
+    rightptr = ((Sint16 *) streamp) + 1;
 
     // Fill the output buffer
 
@@ -251,22 +170,18 @@ static void SDL_PCMixCallback(void *udata, Uint8 *stream, int len)
     {
         // Has this sound expired? If so, retrieve the next frequency
 
-        while (current_remaining == 0) 
+        while (current_remaining == 0)
         {
             oldfreq = current_freq;
-            phase_offset = 0;
 
             // Get the next frequency to play
 
             if(pcSound)
             {
-                // The PC speaker sample rate is 140Hz (see SDL_t0SlowAsmService)
-                current_remaining = param_samplerate / 140;
-
                 if(*pcSound!=pcLastSample)
                 {
                     pcLastSample=*pcSound;
-					
+
                     if(pcLastSample)
                         // The PC PIC counts down at 1.193180MHz
                         // So pwm_freq = counter_freq / reload_value
@@ -274,7 +189,9 @@ static void SDL_PCMixCallback(void *udata, Uint8 *stream, int len)
                         current_freq = 1193180 / (pcLastSample * 60);
                     else
                         current_freq = 0;
-						
+
+                    // The PC speaker sample rate is 140Hz (see SDL_t0SlowAsmService)
+                    current_remaining = param_samplerate / 140;
                 }
                 pcSound++;
                 pcLengthLeft--;
@@ -286,9 +203,18 @@ static void SDL_PCMixCallback(void *udata, Uint8 *stream, int len)
                 }
             }
             else
-            {	
+            {
                 current_freq = 0;
                 current_remaining = 1;
+            }
+
+            if (current_freq != 0)
+            {
+                // Adjust phase to match to the new frequency.
+                // This gives us a smooth transition between different tones,
+                // with no impulse changes.
+
+                phase_offset = (phase_offset * oldfreq) / current_freq;
             }
         }
 
@@ -300,17 +226,17 @@ static void SDL_PCMixCallback(void *udata, Uint8 *stream, int len)
 
             this_value = 0;
         }
-        else 
+        else
         {
             int frac;
 
             // Determine whether we are at a peak or trough in the current
-            // sound.  Multiply by 2 so that frac % 2 will give 0 or 1 
+            // sound.  Multiply by 2 so that frac % 2 will give 0 or 1
             // depending on whether we are at a peak or trough.
 
             frac = (phase_offset * current_freq * 2) / param_samplerate;
 
-            if ((frac % 2) == 0) 
+            if ((frac % 2) == 0)
             {
                 this_value = SQUARE_WAVE_AMP;
             }
@@ -352,6 +278,8 @@ SD_StopDigitized(void)
         case sds_SoundBlaster:
             Mix_HaltChannel(-1);
             break;
+        default:
+            break;
     }
 }
 
@@ -375,32 +303,18 @@ void SD_SetPosition(int channel, int leftpos, int rightpos)
     switch (DigiMode)
     {
         case sds_SoundBlaster:
-//            SDL_PositionSBP(leftpos,rightpos);
             Mix_SetPanning(channel, ((15 - leftpos) << 4) + 15,
                 ((15 - rightpos) << 4) + 15);
+            break;
+        default:
             break;
     }
 }
 
-Sint16 GetSample(float csample, byte *samples, int size)
-{
-    float s0=0, s1=0, s2=0;
-    int cursample = (int) csample;
-    float sf = csample - (float) cursample;
-
-    if(cursample-1 >= 0) s0 = (float) (samples[cursample-1] - 128);
-    s1 = (float) (samples[cursample] - 128);
-    if(cursample+1 < size) s2 = (float) (samples[cursample+1] - 128);
-
-    float val = s0*sf*(sf-1)/2 - s1*(sf*sf-1) + s2*(sf+1)*sf/2;
-    int32_t intval = (int32_t) (val * 256);
-    if(intval < -32768) intval = -32768;
-    else if(intval > 32767) intval = 32767;
-    return (Sint16) intval;
-}
-
 void SD_PrepareSound(int which)
 {
+    SDL_AudioCVT cvt;
+
     if(DigiList == NULL)
         Quit("SD_PrepareSound(%i): DigiList not initialized!\n", which);
 
@@ -411,37 +325,30 @@ void SD_PrepareSound(int which)
     if(origsamples + size >= PM_GetEnd())
         Quit("SD_PrepareSound(%i): Sound reaches out of page file!\n", which);
 
-    int destsamples = (int) ((float) size * (float) param_samplerate
-        / (float) ORIGSAMPLERATE);
-
-    byte *wavebuffer = (byte *) malloc(sizeof(headchunk) + sizeof(wavechunk)
-        + destsamples * 2);     // dest are 16-bit samples
-    if(wavebuffer == NULL)
-        Quit("Unable to allocate wave buffer for sound %i!\n", which);
-
-    headchunk head = {{'R','I','F','F'}, 0, {'W','A','V','E'},
-        {'f','m','t',' '}, 0x10, 0x0001, 1, (longword) param_samplerate, (longword) (param_samplerate*2), 2, 16};
-    wavechunk dhead = {{'d', 'a', 't', 'a'}, (longword) (destsamples*2)};
-    head.filelenminus8 = sizeof(head) + destsamples*2;  // (sizeof(dhead)-8 = 0)
-    memcpy(wavebuffer, &head, sizeof(head));
-    memcpy(wavebuffer+sizeof(head), &dhead, sizeof(dhead));
-
-    // alignment is correct, as wavebuffer comes from malloc
-    // and sizeof(headchunk) % 4 == 0 and sizeof(wavechunk) % 4 == 0
-    Sint16 *newsamples = (Sint16 *)(void *) (wavebuffer + sizeof(headchunk)
-        + sizeof(wavechunk));
-    float cursample = 0.F;
-    float samplestep = (float) ORIGSAMPLERATE / (float) param_samplerate;
-    for(int i=0; i<destsamples; i++, cursample+=samplestep)
+    if (SDL_BuildAudioCVT(&cvt,
+                          AUDIO_U8, 1, ORIGSAMPLERATE,
+                          mix_format, mix_channels, param_samplerate) < 0)
     {
-        newsamples[i] = GetSample((float)size * (float)i / (float)destsamples,
-            origsamples, size);
+      Quit("SDL_BuildAudioCVT: %s\n", SDL_GetError());
     }
 
-    SoundChunks[which] = Mix_LoadWAV_RW(SDL_RWFromMem(wavebuffer,
-        sizeof(headchunk) + sizeof(wavechunk) + destsamples * 2), 1);
+    cvt.len = size;
+    cvt.buf = (Uint8 *)malloc(cvt.len * cvt.len_mult);
+    // [FG] clear buffer (cvt.len * cvt.len_mult >= cvt.len_cvt)
+    memset(cvt.buf, 0, cvt.len * cvt.len_mult);
+    memcpy(cvt.buf, origsamples, cvt.len);
 
-    free(wavebuffer);
+    if (SDL_ConvertAudio(&cvt) < 0)
+    {
+      free(cvt.buf);
+      Quit("SDL_ConvertAudio: %s\n", SDL_GetError());
+    }
+
+    Mix_Chunk *const chunk = &SoundChunks[which];
+    chunk->allocated = 1;
+    chunk->volume = MIX_MAX_VOLUME;
+    chunk->abuf = cvt.buf;
+    chunk->alen = cvt.len_cvt;
 }
 
 int SD_PlayDigitized(word which,int leftpos,int rightpos)
@@ -457,8 +364,8 @@ int SD_PlayDigitized(word which,int leftpos,int rightpos)
 
     DigiPlaying = true;
 
-    Mix_Chunk *sample = SoundChunks[which];
-    if(sample == NULL)
+    Mix_Chunk *sample = &SoundChunks[which];
+    if (sample->abuf == NULL)
     {
         printf("SoundChunks[%i] is NULL!\n", which);
         return 0;
@@ -495,11 +402,17 @@ SD_SetDigiDevice(SDSMode mode)
             if (!SoundBlasterPresent)
                 devicenotpresent = true;
             break;
+        default:
+            break;
     }
 
     if (!devicenotpresent)
     {
         DigiMode = mode;
+
+#ifdef NOTYET
+        SDL_SetTimerSpeed();
+#endif
     }
 }
 
@@ -568,8 +481,13 @@ SDL_SetupDigi(void)
 static void
 SDL_ALStopSound(void)
 {
+    // [DenisBelmondo] backport ecwolf/k1n9_duk3 fixes
+    SDL_LockMutex(audioMutex);
+
     alSound = 0;
     alOut(alFreqH + 0, 0);
+
+    SDL_UnlockMutex(audioMutex);
 }
 
 static void
@@ -608,6 +526,9 @@ SDL_ALPlaySound(AdLibSound *sound)
 
     SDL_ALStopSound();
 
+    // [DenisBelmondo] backport ecwolf/k1n9_duk3 fixes
+    SDL_LockMutex(audioMutex);
+
     alLengthLeft = sound->common.length;
     data = sound->data;
     alBlock = ((sound->block & 7) << 2) | 0x20;
@@ -620,6 +541,8 @@ SDL_ALPlaySound(AdLibSound *sound)
 
     SDL_AlSetFXInst(inst);
     alSound = (byte *)data;
+
+    SDL_UnlockMutex(audioMutex);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -630,25 +553,15 @@ SDL_ALPlaySound(AdLibSound *sound)
 static void
 SDL_ShutAL(void)
 {
+    // [DenisBelmondo] backport ecwolf/k1n9_duk3 fixes
+    SDL_LockMutex(audioMutex);
+
     alSound = 0;
     alOut(alEffects,0);
     alOut(alFreqH + 0,0);
     SDL_AlSetFXInst(&alZeroInst);
-}
 
-///////////////////////////////////////////////////////////////////////////
-//
-//      SDL_CleanAL() - Totally shuts down the AdLib card
-//
-///////////////////////////////////////////////////////////////////////////
-static void
-SDL_CleanAL(void)
-{
-    int     i;
-
-    alOut(alEffects,0);
-    for (i = 1; i < 0xf5; i++)
-        alOut(i, 0);
+    SDL_UnlockMutex(audioMutex);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -661,24 +574,6 @@ SDL_StartAL(void)
 {
     alOut(alEffects, 0);
     SDL_AlSetFXInst(&alZeroInst);
-}
-
-///////////////////////////////////////////////////////////////////////////
-//
-//      SDL_DetectAdLib() - Determines if there's an AdLib (or SoundBlaster
-//              emulating an AdLib) present
-//
-///////////////////////////////////////////////////////////////////////////
-static boolean
-SDL_DetectAdLib(void)
-{
-    for (int i = 1; i <= 0xf5; i++)       // Zero all the registers
-        alOut(i, 0);
-
-    alOut(1, 0x20);             // Set WSE=1
-//    alOut(8, 0);                // Set CSM=0 & SEL=0
-
-    return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -697,20 +592,10 @@ SDL_ShutDevice(void)
         case sdm_AdLib:
             SDL_ShutAL();
             break;
+        default:
+            break;
     }
     SoundMode = sdm_Off;
-}
-
-///////////////////////////////////////////////////////////////////////////
-//
-//      SDL_CleanDevice() - totally shuts down all sound devices
-//
-///////////////////////////////////////////////////////////////////////////
-static void
-SDL_CleanDevice(void)
-{
-    if ((SoundMode == sdm_AdLib) || (MusicMode == smm_AdLib))
-        SDL_CleanAL();
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -725,6 +610,8 @@ SDL_StartDevice(void)
     {
         case sdm_AdLib:
             SDL_StartAL();
+            break;
+        default:
             break;
     }
     SoundNumber = (soundnames) 0;
@@ -830,44 +717,43 @@ void SDL_IMFMusicPlayer(void *udata, Uint8 *stream, int len)
         {
             if(numreadysamples<sampleslen)
             {
-                YM3812UpdateOne(oplChip, stream16, numreadysamples);
+                OPL3_GenerateStream(&oplChip, stream16, numreadysamples);
                 stream16 += numreadysamples*2;
                 sampleslen -= numreadysamples;
             }
             else
             {
-                YM3812UpdateOne(oplChip, stream16, sampleslen);
+                OPL3_GenerateStream(&oplChip, stream16, sampleslen);
                 numreadysamples -= sampleslen;
                 return;
             }
         }
+
+        // [DenisBelmondo] backport ecwolf/k1n9_duk3 fixes
+        SDL_LockMutex(audioMutex);
+
         soundTimeCounter--;
         if(!soundTimeCounter)
         {
             soundTimeCounter = 5;
-            if(curAlSound != alSound)
-            {
-                curAlSound = curAlSoundPtr = alSound;
-                curAlLengthLeft = alLengthLeft;
-            }
-            if(curAlSound)
-            {
-                if(*curAlSoundPtr)
-                {
-                    alOut(alFreqL, *curAlSoundPtr);
-                    alOut(alFreqH, alBlock);
-                }
-                else alOut(alFreqH, 0);
-                curAlSoundPtr++;
-                curAlLengthLeft--;
-                if(!curAlLengthLeft)
-                {
-                    curAlSound = alSound = 0;
-                    SoundNumber = (soundnames) 0;
-                    SoundPriority = 0;
-                    alOut(alFreqH, 0);
-                }
-            }
+
+            // [DenisBelmondo] backport ecwolf/k1n9_duk3 fixes
+			// [k1n9_duk3] THIS is the way the original Wolfenstein 3-D code handled it!
+			if(alSound)
+			{
+				if(*alSound)
+				{
+					alOut(alFreqL, *alSound);
+					alOut(alFreqH, alBlock);
+				} else alOut(alFreqH, 0);
+				alSound++;
+				if (!(--alLengthLeft))
+				{
+					alSound = 0;
+					SoundPriority=0;
+					alOut(alFreqH, 0);
+				}
+			}
         }
         if(sqActive)
         {
@@ -875,7 +761,7 @@ void SDL_IMFMusicPlayer(void *udata, Uint8 *stream, int len)
             {
                 if(sqHackTime > alTimeCount) break;
                 sqHackTime = alTimeCount + *(sqHackPtr+1);
-                alOut(*(byte *) sqHackPtr, *(((byte *) sqHackPtr)+1)); // play music
+                alOut(*(byte *) sqHackPtr, *(((byte *) sqHackPtr)+1));
                 sqHackPtr += 2;
                 sqHackLen -= 4;
             }
@@ -890,7 +776,35 @@ void SDL_IMFMusicPlayer(void *udata, Uint8 *stream, int len)
             }
         }
         numreadysamples = samplesPerMusicTick;
+
+        SDL_UnlockMutex(audioMutex);
     }
+}
+
+static int GetSliceSize(void)
+{
+  int limit, n;
+
+  if (param_audiobuffer != -1)
+    return param_audiobuffer;
+
+  limit = 2048 / (44100 / param_samplerate);
+
+  // Try all powers of two, not exceeding the limit.
+
+  for (n = 0; ; n++)
+  {
+    // 2^n <= limit < 2^n+1 ?
+
+    if ((1 << (n + 1)) > limit)
+    {
+      return (1 << n);
+    }
+  }
+
+  // Should never happen?
+
+  return 1024;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -902,17 +816,24 @@ void SDL_IMFMusicPlayer(void *udata, Uint8 *stream, int len)
 void
 SD_Startup(void)
 {
-    int     i;
-
     if (SD_Started)
         return;
 
-    if(Mix_OpenAudio(param_samplerate, AUDIO_S16, 2, param_audiobuffer))
+    // [DenisBelmondo] backport ecwolf/k1n9_duk3 fixes
+    if (!(audioMutex = SDL_CreateMutex()))
+    {
+        puts("Unable to create audio mutex");
+        return;
+    }
+
+    if (Mix_OpenAudioDevice(param_samplerate, AUDIO_S16SYS, 2, GetSliceSize(), NULL,
+                            SDL_AUDIO_ALLOW_FREQUENCY_CHANGE) < 0)
     {
         printf("Unable to open audio: %s\n", Mix_GetError());
         return;
     }
 
+    Mix_QuerySpec(&param_samplerate, &mix_format, &mix_channels);
     Mix_ReserveChannels(2);  // reserve player and boss weapon channels
     Mix_GroupChannels(2, MIX_CHANNELS-1, 1); // group remaining channels
 
@@ -920,16 +841,7 @@ SD_Startup(void)
 
     samplesPerMusicTick = param_samplerate / 700;    // SDL_t0FastAsmService played at 700Hz
 
-    if(YM3812Init(1,3579545,param_samplerate))
-    {
-        printf("Unable to create virtual OPL!!\n");
-    }
-
-    for(i=1;i<0xf6;i++)
-        YM3812Write(oplChip,i,0);
-
-    YM3812Write(oplChip,1,0x20); // Set WSE=1
-//    YM3812Write(0,8,0); // Set CSM=0 & SEL=0		 // already set in for statement
+    OPL3_Reset(&oplChip, param_samplerate);
 
     Mix_HookMusic(SDL_IMFMusicPlayer, 0);
     Mix_ChannelFinished(SD_ChannelFinished);
@@ -937,7 +849,7 @@ SD_Startup(void)
     SoundBlasterPresent = true;
 
     alTimeCount = 0;
-	
+
     // Add PC speaker sound mixer
     Mix_SetPostMix(SDL_PCMixCallback, NULL);
 
@@ -964,9 +876,17 @@ SD_Shutdown(void)
     SD_MusicOff();
     SD_StopSound();
 
+    // [DenisBelmondo] backport ecwolf/k1n9_duk3 fixes
+    if (audioMutex)
+    {
+        SDL_DestroyMutex(audioMutex);
+        audioMutex = NULL;
+    }
+
     for(int i = 0; i < STARTMUSIC - STARTDIGISOUNDS; i++)
     {
-        if(SoundChunks[i]) Mix_FreeChunk(SoundChunks[i]);
+        if (SoundChunks[i].abuf) free(SoundChunks[i].abuf);
+        memset(&SoundChunks[i], 0, sizeof(SoundChunks[i]));
     }
 
     free(DigiList);
@@ -1008,10 +928,11 @@ SD_PlaySound(soundnames sound)
     ispos = nextsoundpos;
     nextsoundpos = false;
 
-    if (sound == -1 || (DigiMode == sds_Off && SoundMode == sdm_Off))
+    if (sound == (soundnames)-1 || (DigiMode == sds_Off && SoundMode == sdm_Off))
         return 0;
 
-    s = (SoundCommon *) SoundTable[sound];
+    void *p = SoundTable[sound];
+    s = (SoundCommon *) p;
 
     if ((SoundMode != sdm_Off) && !s)
             Quit("SD_PlaySound() - Uncached sound");
@@ -1061,11 +982,9 @@ SD_PlaySound(soundnames sound)
             SDL_PCPlaySound((PCSound *)s);
             break;
         case sdm_AdLib:
-#ifdef ADDEDFIX // 2
-            curAlSound = alSound = 0;                // Tricob
-            alOut(alFreqH, 0);
-#endif
             SDL_ALPlaySound((AdLibSound *)s);
+            break;
+        default:
             break;
     }
 
@@ -1094,6 +1013,8 @@ SD_SoundPlaying(void)
         case sdm_AdLib:
             result = alSound? true : false;
             break;
+        default:
+            break;
     }
 
     if (result)
@@ -1120,6 +1041,8 @@ SD_StopSound(void)
             break;
         case sdm_AdLib:
             SDL_ALStopSound();
+            break;
+        default:
             break;
     }
 
@@ -1162,6 +1085,9 @@ SD_MusicOff(void)
 {
     word    i;
 
+    // [DenisBelmondo] backport ecwolf/k1n9_duk3 fixes
+    SDL_LockMutex(audioMutex);
+
     sqActive = false;
     switch (MusicMode)
     {
@@ -1170,7 +1096,11 @@ SD_MusicOff(void)
             for (i = 0;i < sqMaxTracks;i++)
                 alOut(alFreqH + i + 1, 0);
             break;
+        default:
+            break;
     }
+
+    SDL_UnlockMutex(audioMutex);
 
     return (int) (sqHackPtr-sqHack);
 }
@@ -1187,6 +1117,9 @@ SD_StartMusic(int chunk)
 
     if (MusicMode == smm_AdLib)
     {
+        // [DenisBelmondo] backport ecwolf/k1n9_duk3 fixes
+        SDL_LockMutex(audioMutex);
+
         int32_t chunkLen = CA_CacheAudioChunk(chunk);
         sqHack = (word *)(void *) audiosegs[chunk];     // alignment is correct
         if(*sqHack == 0) sqHackLen = sqHackSeqLen = chunkLen;
@@ -1195,6 +1128,8 @@ SD_StartMusic(int chunk)
         sqHackTime = 0;
         alTimeCount = 0;
         SD_MusicOn();
+
+        SDL_UnlockMutex(audioMutex);
     }
 }
 
@@ -1205,6 +1140,9 @@ SD_ContinueMusic(int chunk, int startoffs)
 
     if (MusicMode == smm_AdLib)
     {
+        // [DenisBelmondo] backport ecwolf/k1n9_duk3 fixes
+        SDL_LockMutex(audioMutex);
+
         int32_t chunkLen = CA_CacheAudioChunk(chunk);
         sqHack = (word *)(void *) audiosegs[chunk];     // alignment is correct
         if(*sqHack == 0) sqHackLen = sqHackSeqLen = chunkLen;
@@ -1213,11 +1151,7 @@ SD_ContinueMusic(int chunk, int startoffs)
 
         if(startoffs >= sqHackLen)
         {
-#ifdef ADDEDFIX // 7                     // Andy, improved by Chris Chokan
-            startoffs = 0;
-#else
             Quit("SD_StartMusic: Illegal startoffs provided!");
-#endif
         }
 
         // fast forward to correct position
@@ -1238,6 +1172,8 @@ SD_ContinueMusic(int chunk, int startoffs)
         alTimeCount = 0;
 
         SD_MusicOn();
+
+        SDL_UnlockMutex(audioMutex);
     }
 }
 
@@ -1255,6 +1191,8 @@ SD_FadeOutMusic(void)
         case smm_AdLib:
             // DEBUG - quick hack to turn the music off
             SD_MusicOff();
+            break;
+        default:
             break;
     }
 }

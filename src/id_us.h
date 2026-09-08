@@ -21,12 +21,12 @@
 
 #define	MaxHighName	57
 #define	MaxScores	7
-typedef	struct
+typedef	PACKED_STRUCT(
 {
     char	name[MaxHighName + 1];
     int32_t	score;
     word	completed,episode;
-} HighScore;
+}) HighScore;
 
 #define	MaxGameName		32
 #define	MaxSaveGames	6
@@ -63,6 +63,7 @@ extern	HighScore	Scores[];
 
 #define	US_HomeWindow()	{PrintX = WindowX; PrintY = WindowY;}
 
+void            US_SetScanNames();
 void            US_Startup(void);
 void            US_Shutdown(void);
 void			US_TextScreen(void),

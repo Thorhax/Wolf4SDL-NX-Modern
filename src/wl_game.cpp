@@ -2,8 +2,7 @@
 
 #include <math.h>
 #include "wl_def.h"
-#include <SDL/SDL_mixer.h>
-#pragma hdrstop
+#include <SDL_mixer.h>
 
 #ifdef MYPROFILE
 #include <TIME.H>
@@ -946,7 +945,7 @@ void LatchNumberHERE (int x, int y, unsigned width, int32_t number)
     unsigned length,c;
     char str[20];
 
-    ltoa (number,str,10);
+    lntoa (number,sizeof(str),str);
 
     length = (unsigned) strlen (str);
 
@@ -1124,7 +1123,7 @@ void RecordDemo (void)
     SetupGameLevel ();
     StartMusic ();
 
-    if(usedoublebuffering) VH_UpdateScreen();
+    VH_UpdateScreen();
     fizzlein = true;
 
     PlayLoop ();
@@ -1178,7 +1177,8 @@ void PlayDemo (int demonumber)
     NewGame (1,0);
     gamestate.mapon = *demoptr++;
     gamestate.difficulty = gd_hard;
-    length = READWORD(*(uint8_t **)&demoptr);
+    length = demoptr[0] | demoptr[1] << 8;
+    demoptr += 2;
     // TODO: Seems like the original demo format supports 16 MB demos
     //       But T_DEM00 and T_DEM01 of Wolf have a 0xd8 as third length size...
     demoptr++;
@@ -1199,8 +1199,8 @@ void PlayDemo (int demonumber)
 
 #ifdef DEMOSEXTERN
     UNCACHEGRCHUNK(dems[demonumber]);
-//#else                         // ADDEDFIX 30 - Chris
-//    MM_FreePtr (&demobuffer);
+#else
+    MM_FreePtr (&demobuffer);
 #endif
 
     demoplayback = false;
@@ -1319,7 +1319,7 @@ void Died (void)
     //
     FinishPaletteShifts ();
 
-    if(usedoublebuffering) VH_UpdateScreen();
+    VH_UpdateScreen();
 
     VL_BarScaledCoord (viewscreenx,viewscreeny,viewwidth,viewheight,4);
 
@@ -1369,7 +1369,6 @@ void Died (void)
 void GameLoop (void)
 {
     boolean died;
-    printf("START GAME\n");
 #ifdef MYPROFILE
     clock_t start,end;
 #endif
@@ -1398,8 +1397,6 @@ restartgame:
         }
 #endif
 
-        DrawLevel ();                        // ADDEDFIX 5 -  Chris Chokan
-
         ingame = true;
         if(loadedgame)
         {
@@ -1416,7 +1413,7 @@ restartgame:
             fizzlein = true;
         }
 
-//        DrawLevel ();                     // ADDEDFIX 5 - moved up  Chris Chokan
+        DrawLevel ();
 
 #ifdef SPEAR
 startplayloop:
@@ -1482,27 +1479,7 @@ startplayloop:
                     ClearMemory ();
 
                     CheckHighScore (gamestate.score,gamestate.mapon+1);
-#ifndef JAPAN
                     strcpy(MainMenu[viewscores].string,STR_VS);
-#endif
-                    MainMenu[viewscores].routine = CP_ViewScores;
-                    return;
-                }
-#endif
-
-#ifdef JAPDEMO
-                if (gamestate.mapon == 3)
-                {
-                    died = true;                    // don't "get psyched!"
-
-                    VW_FadeOut ();
-
-                    ClearMemory ();
-
-                    CheckHighScore (gamestate.score,gamestate.mapon+1);
-#ifndef JAPAN
-                    strcpy(MainMenu[viewscores].string,STR_VS);
-#endif
                     MainMenu[viewscores].routine = CP_ViewScores;
                     return;
                 }
@@ -1565,16 +1542,10 @@ startplayloop:
                 if(screenHeight % 200 != 0)
                     VL_ClearScreen(0);
 
-#ifdef _arch_dreamcast
-                DC_StatusClearLCD();
-#endif
-
                 ClearMemory ();
 
                 CheckHighScore (gamestate.score,gamestate.mapon+1);
-#ifndef JAPAN
                 strcpy(MainMenu[viewscores].string,STR_VS);
-#endif
                 MainMenu[viewscores].routine = CP_ViewScores;
                 return;
 
@@ -1592,9 +1563,7 @@ startplayloop:
                 ClearMemory ();
 
                 CheckHighScore (gamestate.score,gamestate.mapon+1);
-#ifndef JAPAN
                 strcpy(MainMenu[viewscores].string,STR_VS);
-#endif
                 MainMenu[viewscores].routine = CP_ViewScores;
                 return;
 

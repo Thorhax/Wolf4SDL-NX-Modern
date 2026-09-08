@@ -22,7 +22,8 @@ void VWB_DrawPropString(const char* string)
 	byte *vbuf = VL_LockSurface(curSurface);
 	if(vbuf == NULL) return;
 
-	font = (fontstruct *) grsegs[STARTFONT+fontnumber];
+	void *p = grsegs[STARTFONT+fontnumber];
+	font = (fontstruct *) p;
 	height = font->height;
 	dest = vbuf + scaleFactor * (py * curPitch + px);
 
@@ -105,7 +106,8 @@ void VWL_MeasureString (const char *string, word *width, word *height, fontstruc
 
 void VW_MeasurePropString (const char *string, word *width, word *height)
 {
-	VWL_MeasureString(string,width,height,(fontstruct *)grsegs[STARTFONT+fontnumber]);
+	void *p = grsegs[STARTFONT+fontnumber];
+	VWL_MeasureString(string,width,height,(fontstruct *)p);
 }
 
 /*
@@ -119,7 +121,7 @@ void VW_MeasurePropString (const char *string, word *width, word *height)
 void VH_UpdateScreen()
 {
 	SDL_BlitSurface(screenBuffer, NULL, screen, NULL);
-	SDL_Flip(screen);
+	VL_Flip();
 }
 
 
@@ -211,7 +213,7 @@ void LatchDrawPic (unsigned x, unsigned y, unsigned picnum)
 
 void LatchDrawPicScaledCoord (unsigned scx, unsigned scy, unsigned picnum)
 {
-    VL_LatchToScreenScaledCoord (latchpics[2+picnum-LATCHPICS_LUMP_START], scx*8, scy);
+	VL_LatchToScreenScaledCoord (latchpics[2+picnum-LATCHPICS_LUMP_START], scx*8, scy);
 }
 
 
@@ -244,13 +246,16 @@ void LoadLatchMem (void)
 //
 // tile 8s
 //
-    surf = SDL_CreateRGBSurface(SDL_HWSURFACE, 8*8,
+    surf = SDL_CreateRGBSurface(0, 8*8,
         ((NUMTILE8 + 7) / 8) * 8, 8, 0, 0, 0, 0);
     if(surf == NULL)
     {
         Quit("Unable to create surface for tiles!");
     }
-    SDL_SetColors(surf, gamepal, 0, 256);
+    SDL_Palette *pal = SDL_AllocPalette(256);
+    SDL_SetPaletteColors(pal, gamepal, 0, 256);
+    SDL_SetSurfacePalette(surf, pal);
+    SDL_FreePalette(pal);
 
 	latchpics[0] = surf;
 	CA_CacheGrChunk (STARTTILE8);
@@ -275,12 +280,15 @@ void LoadLatchMem (void)
 	{
 		width = pictable[i-STARTPICS].width;
 		height = pictable[i-STARTPICS].height;
-		surf = SDL_CreateRGBSurface(SDL_HWSURFACE, width, height, 8, 0, 0, 0, 0);
+		surf = SDL_CreateRGBSurface(0, width, height, 8, 0, 0, 0, 0);
         if(surf == NULL)
         {
             Quit("Unable to create surface for picture!");
         }
-        SDL_SetColors(surf, gamepal, 0, 256);
+        SDL_Palette *pal = SDL_AllocPalette(256);
+        SDL_SetPaletteColors(pal, gamepal, 0, 256);
+        SDL_SetSurfacePalette(surf, pal);
+        SDL_FreePalette(pal);
 
 		latchpics[2+i-start] = surf;
 		CA_CacheGrChunk (i);
@@ -356,7 +364,7 @@ boolean FizzleFade (SDL_Surface *source, int x1, int y1,
     unsigned width, unsigned height, unsigned frames, boolean abortable)
 {
     unsigned x, y, frame, pixperframe;
-    int32_t  rndval, lastrndval;
+    int32_t  rndval = 0, lastrndval;
     int      first = 1;
 
     lastrndval = 0;
@@ -376,7 +384,7 @@ boolean FizzleFade (SDL_Surface *source, int x1, int y1,
         {
             VL_UnlockSurface(source);
             SDL_BlitSurface(source, NULL, screen, NULL);
-            SDL_Flip(screen);
+            VL_Flip();
             return true;
         }
 
@@ -417,18 +425,10 @@ boolean FizzleFade (SDL_Surface *source, int x1, int y1,
                     // copy one pixel
                     //
 
-                    if(screenBits == 8)
-                    {
-                        *(destptr + (y1 + y) * screen->pitch + x1 + x)
-                            = *(srcptr + (y1 + y) * source->pitch + x1 + x);
-                    }
-                    else
-                    {
                         byte col = *(srcptr + (y1 + y) * source->pitch + x1 + x);
                         uint32_t fullcol = SDL_MapRGB(screen->format, curpal[col].r, curpal[col].g, curpal[col].b);
                         memcpy(destptr + (y1 + y) * screen->pitch + (x1 + x) * screen->format->BytesPerPixel,
                             &fullcol, screen->format->BytesPerPixel);
-                    }
 
                     if(rndval == 0)		// entire sequence has been completed
                         goto finished;
@@ -438,10 +438,10 @@ boolean FizzleFade (SDL_Surface *source, int x1, int y1,
             }
 
             // If there is no double buffering, we always use the "first frame" case
-            if(usedoublebuffering) first = 0;
+            first = 0;
 
             VL_UnlockSurface(screen);
-            SDL_Flip(screen);
+            VL_Flip();
         }
         else
         {
@@ -465,6 +465,6 @@ finished:
     VL_UnlockSurface(source);
     VL_UnlockSurface(screen);
     SDL_BlitSurface(source, NULL, screen, NULL);
-    SDL_Flip(screen);
+    VL_Flip();
     return false;
 }

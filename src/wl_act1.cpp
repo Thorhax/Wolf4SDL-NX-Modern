@@ -1,7 +1,6 @@
 // WL_ACT1.C
 
 #include "wl_def.h"
-#pragma hdrstop
 
 /*
 =============================================================================
@@ -154,7 +153,7 @@ void SpawnStatic (int tilex, int tiley, int type)
     switch (statinfo[type].type)
     {
         case block:
-            actorat[tilex][tiley] = (objtype *) BIT_WALL;          // consider it a blocking tile
+            actorat[tilex][tiley] = (objtype *) 64;          // consider it a blocking tile
         case none:
             laststatobj->flags = 0;
             break;
@@ -182,6 +181,8 @@ void SpawnStatic (int tilex, int tiley, int type)
         case    bo_spear:
             laststatobj->flags = FL_BONUS;
             laststatobj->itemnumber = statinfo[type].type;
+            break;
+        default:
             break;
     }
 
@@ -372,25 +373,25 @@ void SpawnDoor (int tilex, int tiley, boolean vertical, int lock)
     lastdoorobj->lock = lock;
     lastdoorobj->action = dr_closed;
 
-    actorat[tilex][tiley] = (objtype *)(uintptr_t)(doornum | BIT_DOOR);   // consider it a solid wall
+    actorat[tilex][tiley] = (objtype *)(uintptr_t)(doornum | 0x80);   // consider it a solid wall
 
     //
     // make the door tile a special tile, and mark the adjacent tiles
     // for door sides
     //
-    tilemap[tilex][tiley] = doornum | BIT_DOOR;
+    tilemap[tilex][tiley] = doornum | 0x80;
     map = mapsegs[0] + (tiley<<mapshift) +tilex;
     if (vertical)
     {
         *map = *(map-1);                        // set area number
-        tilemap[tilex][tiley-1] |= BIT_WALL;
-        tilemap[tilex][tiley+1] |= BIT_WALL;
+        tilemap[tilex][tiley-1] |= 0x40;
+        tilemap[tilex][tiley+1] |= 0x40;
     }
     else
     {
         *map = *(map-mapwidth);                                 // set area number
-        tilemap[tilex-1][tiley] |= BIT_WALL;
-        tilemap[tilex+1][tiley] |= BIT_WALL;
+        tilemap[tilex-1][tiley] |= 0x40;
+        tilemap[tilex+1][tiley] |= 0x40;
     }
 
     doornum++;
@@ -489,7 +490,7 @@ void CloseDoor (int door)
     //
     // make the door space solid
     //
-    actorat[tilex][tiley] = (objtype *)(uintptr_t)(door | BIT_DOOR);
+    actorat[tilex][tiley] = (objtype *)(uintptr_t)(door | 0x80);
 }
 
 
@@ -513,7 +514,7 @@ void OperateDoor (int door)
     {
         if ( ! (gamestate.keys & (1 << (lock-dr_lock1) ) ) )
         {
-            if(doorposition[door]==0)SD_PlaySound (NOWAYSND);  // ADDEDFIX 9       // locked
+            SD_PlaySound (NOWAYSND);                // locked
             return;
         }
     }
@@ -638,7 +639,7 @@ void DoorClosing (int door)
     tilex = doorobjlist[door].tilex;
     tiley = doorobjlist[door].tiley;
 
-    if ( ((int)(uintptr_t)actorat[tilex][tiley] != (door | BIT_DOOR))
+    if ( ((int)(uintptr_t)actorat[tilex][tiley] != (door | 0x80))
         || (player->tilex == tilex && player->tiley == tiley) )
     {                       // something got inside the door
         OpenDoor (door);
@@ -723,6 +724,9 @@ void MoveDoors (void)
             case dr_closing:
                 DoorClosing(door);
                 break;
+
+            default:
+                break;
         }
     }
 }
@@ -739,8 +743,7 @@ void MoveDoors (void)
 word pwallstate;
 word pwallpos;                  // amount a pushable wall has been moved (0-63)
 word pwallx,pwally;
-byte pwalldir;
-tiletype pwalltile;
+byte pwalldir,pwalltile;
 int dirs[4][2]={{0,-1},{1,0},{0,1},{-1,0}};
 
 /*
@@ -779,8 +782,8 @@ void PushWall (int checkx, int checky, int dir)
     pwallstate = 1;
     pwallpos = 0;
     pwalltile = tilemap[pwallx][pwally];
-    tilemap[pwallx][pwally] = BIT_WALL;
-    tilemap[pwallx+dx][pwally+dy] = BIT_WALL;
+    tilemap[pwallx][pwally] = 64;
+    tilemap[pwallx+dx][pwally+dy] = 64;
     *(mapsegs[1]+(pwally<<mapshift)+pwallx) = 0;   // remove P tile info
     *(mapsegs[0]+(pwally<<mapshift)+pwallx) = *(mapsegs[0]+(player->tiley<<mapshift)+player->tilex); // set correct floorcode (BrotherTank's fix)
 
@@ -845,14 +848,14 @@ void MovePWalls (void)
             pwally += dy;
 
             if (actorat[pwallx+dx][pwally+dy]
-                || xl<=pwallx+dx && pwallx+dx<=xh && yl<=pwally+dy && pwally+dy<=yh)
+                || (xl<=pwallx+dx && pwallx+dx<=xh && yl<=pwally+dy && pwally+dy<=yh))
             {
                 pwallstate = 0;
                 tilemap[pwallx][pwally] = oldtile;
                 return;
             }
             actorat[pwallx+dx][pwally+dy] = (objtype *)(uintptr_t) (tilemap[pwallx+dx][pwally+dy] = oldtile);
-            tilemap[pwallx+dx][pwally+dy] = BIT_WALL;
+            tilemap[pwallx+dx][pwally+dy] = 64;
         }
     }
 

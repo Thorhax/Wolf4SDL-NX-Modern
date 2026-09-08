@@ -15,16 +15,16 @@
 typedef	int		ScanCode;
 #define	sc_None			0
 #define	sc_Bad			0xff
-#define	sc_Return		SDLK_MINUS
-#define	sc_Enter		sc_Return // ZR
-#define	sc_Escape		SDLK_PLUS //SDLK_j // ZL
-#define	sc_Space		SDLK_b
+#define	sc_Return		SDLK_RETURN
+#define	sc_Enter		sc_Return
+#define	sc_Escape		SDLK_ESCAPE
+#define	sc_Space		SDLK_SPACE
 #define	sc_BackSpace	SDLK_BACKSPACE
 #define	sc_Tab			SDLK_TAB
-#define	sc_Alt			SDLK_x
-#define	sc_Control		SDLK_a
+#define	sc_Alt			SDLK_LALT
+#define	sc_Control		SDLK_LCTRL
 #define	sc_CapsLock		SDLK_CAPSLOCK
-#define	sc_LShift		SDLK_y
+#define	sc_LShift		SDLK_LSHIFT
 #define	sc_RShift		SDLK_RSHIFT
 #define	sc_UpArrow		SDLK_UP
 #define	sc_DownArrow	SDLK_DOWN
@@ -52,45 +52,48 @@ typedef	int		ScanCode;
 #define sc_ScrollLock		SDLK_SCROLLOCK
 #define sc_PrintScreen		SDLK_PRINT
 
-#define	sc_1			SDLK_q
-#define	sc_2			SDLK_q
-#define	sc_3			SDLK_q
-#define	sc_4			SDLK_q
-#define	sc_5			SDLK_q
-#define	sc_6			SDLK_q
-#define	sc_7			SDLK_q
-#define	sc_8			SDLK_q
-#define	sc_9			SDLK_q
-#define	sc_0			SDLK_q
+#define	sc_1			SDLK_1
+#define	sc_2			SDLK_2
+#define	sc_3			SDLK_3
+#define	sc_4			SDLK_4
+#define	sc_5			SDLK_5
+#define	sc_6			SDLK_6
+#define	sc_7			SDLK_7
+#define	sc_8			SDLK_8
+#define	sc_9			SDLK_9
+#define	sc_0			SDLK_0
 
-#define	sc_A			SDLK_q
-#define	sc_B			SDLK_q
-#define	sc_C			SDLK_q
-#define	sc_D			SDLK_q
-#define	sc_E			SDLK_q
-#define	sc_F			SDLK_q
-#define	sc_G			SDLK_q
-#define	sc_H			SDLK_q
-#define	sc_I			SDLK_q
-#define	sc_J			SDLK_q
-#define	sc_K			SDLK_q
-#define	sc_L			SDLK_q
-#define	sc_M			SDLK_q
-#define	sc_N			SDLK_q
-#define	sc_O			SDLK_q
-#define	sc_P			SDLK_q
+#define	sc_A			SDLK_a
+#define	sc_B			SDLK_b
+#define	sc_C			SDLK_c
+#define	sc_D			SDLK_d
+#define	sc_E			SDLK_e
+#define	sc_F			SDLK_f
+#define	sc_G			SDLK_g
+#define	sc_H			SDLK_h
+#define	sc_I			SDLK_i
+#define	sc_J			SDLK_j
+#define	sc_K			SDLK_k
+#define	sc_L			SDLK_l
+#define	sc_M			SDLK_m
+#define	sc_N			SDLK_n
+#define	sc_O			SDLK_o
+#define	sc_P			SDLK_p
 #define	sc_Q			SDLK_q
-#define	sc_R			SDLK_q
-#define	sc_S			SDLK_q
-#define	sc_T			SDLK_q
-#define	sc_U			SDLK_q
-#define	sc_V			SDLK_q
-#define	sc_W			SDLK_q
-#define	sc_X			SDLK_q
-#define	sc_Y			SDLK_q
-#define	sc_Z			SDLK_q
+#define	sc_R			SDLK_r
+#define	sc_S			SDLK_s
+#define	sc_T			SDLK_t
+#define	sc_U			SDLK_u
+#define	sc_V			SDLK_v
+#define	sc_W			SDLK_w
+#define	sc_X			SDLK_x
+#define	sc_Y			SDLK_y
+#define	sc_Z			SDLK_z
 
 #define	key_None		0
+
+// [FG] map mouse wheel to key presses
+const int KEYD_MWHEELUP = (0x80 + 0x6b), KEYD_MWHEELDOWN = (0x80 + 0x6c);
 
 typedef	enum		{
 						demo_Off,demo_Record,demo_Playback,demo_PlayDone
@@ -136,13 +139,13 @@ typedef	struct		{
 									joyMultXH,joyMultYH;
 					} JoystickDef;
 // Global variables
-extern  volatile boolean    Keyboard[];
+extern std::unordered_map<ScanCode, boolean> Keyboard;
 extern           boolean    MousePresent;
 extern  volatile boolean    Paused;
 extern  volatile char       LastASCII;
-extern  volatile ScanCode   LastScan;
+extern           ScanCode   LastScan;
 extern           int        JoyNumButtons;
-extern           boolean    forcegrabmouse;
+extern           boolean    grabmouse;
 
 
 // Function prototypes
@@ -178,7 +181,6 @@ void    IN_GetJoyFineDelta(int *dx, int *dy);
 
 void    IN_StartAck(void);
 boolean IN_CheckAck (void);
-bool    IN_IsInputGrabbed();
-void    IN_CenterMouse();
+void    IN_UpdateGrab(void);
 
 #endif
